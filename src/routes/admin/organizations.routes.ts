@@ -25,8 +25,7 @@ const CreateOrgSchema = z.object({
     .string()
     .min(1)
     .max(255)
-    .regex(/^[a-z0-9-]+$/)
-    .optional(),
+    .regex(/^[a-z0-9-]+$/),
 });
 
 /**
@@ -101,11 +100,23 @@ router.post(
       }
 
       // Create organization
-      const org = await organizationService.createOrganization({
+      const createInput: {
+        name: string;
+        slug: string;
+        clerkOrgId?: string;
+        createdBy?: number;
+      } = {
         name: parsed.data.name,
         slug: parsed.data.slug,
-        clerkOrgId: req.user?.userId, // Associate with creating user
-      });
+      };
+
+      if (req.user?.userId) {
+        const userIdNum = parseInt(req.user.userId, 10);
+        createInput.clerkOrgId = req.user.userId;
+        createInput.createdBy = userIdNum;
+      }
+
+      const org = await organizationService.createOrganization(createInput);
 
       res.status(201).json({
         success: true,

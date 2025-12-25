@@ -1,0 +1,1 @@
+ALTER TABLE "organizations" ALTER COLUMN "created_by" SET DATA TYPE varchar(255);

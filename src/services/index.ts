@@ -38,8 +38,12 @@ export { rolePermissionService } from "./role-permission.service.js";
 
 export { userRoleService } from "./user-role.service.js";
 
-// Override service
+// User-Plan service
+export { userPlanService } from "./user-plan.service.js";
+
+// Override services
 export { overrideService } from "./override.service.js";
+export { organizationOverrideService } from "./organization-override.service.js";
 
 // Usage service
 export { usageService } from "./usage.service.js";

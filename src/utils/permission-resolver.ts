@@ -32,8 +32,33 @@ export function mergeFeatures(
 }
 
 /**
+ * Apply organization overrides to feature permissions
+ * Organization overrides are applied before user overrides
+ * @param features - Current feature permissions
+ * @param orgOverrides - Organization overrides
+ * @returns Updated feature map
+ */
+export function applyOrganizationOverrides(
+  features: Map<string, boolean>,
+  orgOverrides: Map<string, { type: string; value: string | null }>
+): Map<string, boolean> {
+  const result = new Map<string, boolean>(features);
+
+  for (const [slug, override] of orgOverrides) {
+    if (override.type === "feature_enable") {
+      result.set(slug, true);
+    } else if (override.type === "feature_disable") {
+      result.set(slug, false);
+    }
+    // limit_increase doesn't affect feature enabled status
+  }
+
+  return result;
+}
+
+/**
  * Apply user overrides to feature permissions
- * Overrides have highest priority
+ * Overrides have highest priority (after organization overrides)
  * @param features - Current feature permissions
  * @param overrides - User overrides
  * @returns Updated feature map
@@ -54,6 +79,25 @@ export function applyFeatureOverrides(
   }
 
   return result;
+}
+
+/**
+ * Apply all overrides (organization then user) to feature permissions
+ * Priority: User Overrides > Organization Overrides
+ * @param features - Current feature permissions
+ * @param orgOverrides - Organization overrides
+ * @param userOverrides - User overrides
+ * @returns Updated feature map
+ */
+export function applyAllOverrides(
+  features: Map<string, boolean>,
+  orgOverrides: Map<string, { type: string; value: string | null }>,
+  userOverrides: Map<string, { type: string; value: string | null }>
+): Map<string, boolean> {
+  // Apply organization overrides first
+  const withOrgOverrides = applyOrganizationOverrides(features, orgOverrides);
+  // Then apply user overrides (higher priority)
+  return applyFeatureOverrides(withOrgOverrides, userOverrides);
 }
 
 /**
@@ -106,20 +150,34 @@ export function calculateAllLimits(
 
   // Process all plan limits
   for (const [slug, maxLimit] of context.planLimits) {
-    const override = context.userOverrides.get(slug);
+    // Priority: user override > org override > plan limit
+    const userOverride = context.userOverrides.get(slug);
+    const orgOverride = context.organizationOverrides.get(slug);
+    const effectiveOverride = userOverride || orgOverride;
     const currentUsage = context.usage.get(slug) ?? 0;
 
-    const limitInfo = calculateLimit(maxLimit, override, currentUsage);
+    const limitInfo = calculateLimit(maxLimit, effectiveOverride, currentUsage);
     if (limitInfo) {
       limits[slug] = limitInfo;
     }
   }
 
   // Check for override-only limits (limits on features not in plan)
-  for (const [slug, override] of context.userOverrides) {
-    if (override.type === "limit_increase" && !limits[slug]) {
+  for (const [slug, userOverride] of context.userOverrides) {
+    if (!limits[slug] && userOverride.type === "limit_increase") {
       const currentUsage = context.usage.get(slug) ?? 0;
-      const limitInfo = calculateLimit(null, override, currentUsage);
+      const limitInfo = calculateLimit(null, userOverride, currentUsage);
+      if (limitInfo) {
+        limits[slug] = limitInfo;
+      }
+    }
+  }
+
+  // Check for org override-only limits
+  for (const [slug, orgOverride] of context.organizationOverrides) {
+    if (!limits[slug] && orgOverride.type === "limit_increase") {
+      const currentUsage = context.usage.get(slug) ?? 0;
+      const limitInfo = calculateLimit(null, orgOverride, currentUsage);
       if (limitInfo) {
         limits[slug] = limitInfo;
       }

@@ -8,10 +8,11 @@ import { userService } from "../../services/user.service.js";
 import { roleService } from "../../services/role.service.js";
 import { featureService } from "../../services/feature.service.js";
 import { usageService } from "../../services/usage.service.js";
+import { organizationOverrideService } from "../../services/organization-override.service.js";
 import { requireAuth } from "../../middleware/auth.middleware.js";
 import { requireOrgAdmin } from "../../middleware/admin-check.middleware.js";
 import type { ApiResponse, ApiErrorResponse } from "../../types/index.js";
-import type { Override, Feature } from "../../types/db.js";
+import type { Override, OrganizationOverride, Feature } from "../../types/db.js";
 
 const router = Router();
 
@@ -28,7 +29,7 @@ interface DashboardResponse {
     usageCount: number;
     usagePercent: number;
   }>;
-  recentOverrides: Override[];
+  recentOverrides: (Override | OrganizationOverride)[];
   activeOverridesCount: number;
 }
 
@@ -64,10 +65,11 @@ router.get(
       }
 
       // Fetch all data in parallel
-      const [usersResult, rolesResult, featuresResult] = await Promise.all([
+      const [usersResult, rolesResult, featuresResult, orgOverrides] = await Promise.all([
         userService.getUsersInOrganization(orgIdNum, { limit: 1, offset: 0 }),
         roleService.getRolesByOrganization(orgIdNum),
         featureService.getAllFeatures({ limit: 100, offset: 0 }),
+        organizationOverrideService.listOrganizationOverrides(orgIdNum, 10),
       ]);
 
       // Build plan distribution (placeholder - would need subscription data)
@@ -87,9 +89,8 @@ router.get(
             usagePercent: 100 - index * 15,
           }));
 
-      // Get recent overrides (placeholder - would need org-level query)
-      const recentOverrides: Override[] = [];
-      const activeOverridesCount = 0;
+      // Get active organization overrides
+      const activeOrgOverrides = await organizationOverrideService.getActiveOrganizationOverrides(orgIdNum);
 
       res.status(200).json({
         success: true,
@@ -99,8 +100,8 @@ router.get(
           totalFeatures: featuresResult.total,
           planDistribution,
           topFeatures,
-          recentOverrides,
-          activeOverridesCount,
+          recentOverrides: orgOverrides,
+          activeOverridesCount: activeOrgOverrides.length,
         },
       });
     } catch (error) {

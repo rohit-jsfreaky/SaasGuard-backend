@@ -54,6 +54,9 @@ export const organizationsRelations = relations(
     users: many(users),
     roles: many(roles),
     userRoles: many(userRoles),
+    userPlans: many(userPlans),
+    plans: many(plans),
+    organizationOverrides: many(organizationOverrides),
     createdByUser: one(users, {
       fields: [organizations.createdBy],
       references: [users.id],
@@ -96,6 +99,7 @@ export const usersRelations = relations(users, ({ one, many }) => ({
     references: [organizations.id],
   }),
   userRoles: many(userRoles),
+  userPlans: many(userPlans),
   overrides: many(overrides),
   usage: many(usage),
   createdOrganizations: many(organizations, {
@@ -140,6 +144,10 @@ export const plans = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     slug: varchar("slug", { length: 255 }).notNull(),
     description: text("description"),
+    organizationId: bigint("organization_id", { mode: "number" }).references(
+      () => organizations.id,
+      { onDelete: "cascade" }
+    ),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -147,12 +155,20 @@ export const plans = pgTable(
       .defaultNow()
       .notNull(),
   },
-  (table) => [unique("plans_slug_unique").on(table.slug)]
+  (table) => [
+    unique("plans_org_slug_unique").on(table.organizationId, table.slug),
+    index("plans_organization_id_idx").on(table.organizationId),
+  ]
 );
 
-export const plansRelations = relations(plans, ({ many }) => ({
+export const plansRelations = relations(plans, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [plans.organizationId],
+    references: [organizations.id],
+  }),
   planFeatures: many(planFeatures),
   planLimits: many(planLimits),
+  userPlans: many(userPlans),
 }));
 
 // =============================================================================
@@ -407,6 +423,109 @@ export const overridesRelations = relations(overrides, ({ one }) => ({
     relationName: "createdOverrides",
   }),
 }));
+
+// =============================================================================
+// USER PLANS (User-Plan Assignment)
+// =============================================================================
+
+export const userPlans = pgTable(
+  "user_plans",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    userId: bigint("user_id", { mode: "number" })
+      .notNull()
+      .references(() => users.id, { onDelete: "cascade" }),
+    planId: bigint("plan_id", { mode: "number" })
+      .notNull()
+      .references(() => plans.id, { onDelete: "cascade" }),
+    organizationId: bigint("organization_id", { mode: "number" }).references(
+      () => organizations.id,
+      { onDelete: "cascade" }
+    ),
+    assignedAt: timestamp("assigned_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    assignedBy: bigint("assigned_by", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" }
+    ),
+    isActive: boolean("is_active").default(true).notNull(),
+  },
+  (table) => [
+    unique("user_plans_user_org_unique").on(table.userId, table.organizationId),
+    index("user_plans_user_id_idx").on(table.userId),
+    index("user_plans_plan_id_idx").on(table.planId),
+    index("user_plans_organization_id_idx").on(table.organizationId),
+  ]
+);
+
+export const userPlansRelations = relations(userPlans, ({ one }) => ({
+  user: one(users, {
+    fields: [userPlans.userId],
+    references: [users.id],
+  }),
+  plan: one(plans, {
+    fields: [userPlans.planId],
+    references: [plans.id],
+  }),
+  organization: one(organizations, {
+    fields: [userPlans.organizationId],
+    references: [organizations.id],
+  }),
+  assignedByUser: one(users, {
+    fields: [userPlans.assignedBy],
+    references: [users.id],
+    relationName: "assignedPlans",
+  }),
+}));
+
+// =============================================================================
+// ORGANIZATION OVERRIDES
+// =============================================================================
+
+export const organizationOverrides = pgTable(
+  "organization_overrides",
+  {
+    id: bigserial("id", { mode: "number" }).primaryKey(),
+    organizationId: bigint("organization_id", { mode: "number" })
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    featureSlug: varchar("feature_slug", { length: 255 }).notNull(),
+    overrideType: overrideTypeEnum("override_type").notNull(),
+    value: varchar("value", { length: 255 }),
+    expiresAt: timestamp("expires_at", { withTimezone: true }),
+    createdBy: bigint("created_by", { mode: "number" }).references(
+      () => users.id,
+      { onDelete: "set null" }
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("org_overrides_org_id_idx").on(table.organizationId),
+    index("org_overrides_feature_slug_idx").on(table.featureSlug),
+    index("org_overrides_expires_at_idx").on(table.expiresAt),
+  ]
+);
+
+export const organizationOverridesRelations = relations(
+  organizationOverrides,
+  ({ one }) => ({
+    organization: one(organizations, {
+      fields: [organizationOverrides.organizationId],
+      references: [organizations.id],
+    }),
+    createdByUser: one(users, {
+      fields: [organizationOverrides.createdBy],
+      references: [users.id],
+      relationName: "createdOrgOverrides",
+    }),
+  })
+);
 
 // =============================================================================
 // USAGE

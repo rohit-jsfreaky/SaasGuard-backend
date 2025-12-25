@@ -9,7 +9,9 @@ import type {
   roles,
   rolePermissions,
   userRoles,
+  userPlans,
   overrides,
+  organizationOverrides,
   usage,
 } from "../db/schema.js";
 
@@ -92,6 +94,16 @@ export type UserRole = InferSelectModel<typeof userRoles>;
 export type NewUserRole = InferInsertModel<typeof userRoles>;
 
 // =============================================================================
+// USER PLANS
+// =============================================================================
+
+export type UserPlan = InferSelectModel<typeof userPlans>;
+export type NewUserPlan = InferInsertModel<typeof userPlans>;
+export type UserPlanUpdate = Partial<
+  Omit<NewUserPlan, "id" | "userId" | "planId" | "assignedAt">
+>;
+
+// =============================================================================
 // OVERRIDES
 // =============================================================================
 
@@ -106,6 +118,16 @@ export type OverrideType =
   | "limit_increase"
   | "feature_enable"
   | "feature_disable";
+
+// =============================================================================
+// ORGANIZATION OVERRIDES
+// =============================================================================
+
+export type OrganizationOverride = InferSelectModel<typeof organizationOverrides>;
+export type NewOrganizationOverride = InferInsertModel<typeof organizationOverrides>;
+export type OrganizationOverrideUpdate = Partial<
+  Omit<NewOrganizationOverride, "id" | "createdAt" | "organizationId">
+>;
 
 // =============================================================================
 // USAGE

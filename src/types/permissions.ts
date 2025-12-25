@@ -77,6 +77,15 @@ export interface PermissionContext {
     }
   >;
 
+  /** Organization-level overrides */
+  organizationOverrides: Map<
+    string,
+    {
+      type: string;
+      value: string | null;
+    }
+  >;
+
   /** Current usage */
   usage: Map<string, number>;
 }

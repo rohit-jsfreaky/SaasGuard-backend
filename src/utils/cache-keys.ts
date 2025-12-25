@@ -82,6 +82,14 @@ export function orgOverridesKey(organizationId: number): string {
 }
 
 /**
+ * Generate cache key for organization overrides (alias)
+ * @param organizationId - Organization ID
+ */
+export function organizationOverridesKey(organizationId: number): string {
+  return `${PREFIX}:org:${organizationId}:overrides`;
+}
+
+/**
  * Generate cache key for a specific feature
  * @param featureId - Feature ID
  */

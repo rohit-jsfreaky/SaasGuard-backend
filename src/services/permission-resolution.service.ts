@@ -13,11 +13,12 @@ import { userRoleService } from "./user-role.service.js";
 import { planFeatureService } from "./plan-feature.service.js";
 import { planLimitService } from "./plan-limit.service.js";
 import { overrideService } from "./override.service.js";
+import { organizationOverrideService } from "./organization-override.service.js";
 import { usageService } from "./usage.service.js";
 import { resolvedPermissionsKey } from "../utils/cache-keys.js";
 import {
   mergeFeatures,
-  applyFeatureOverrides,
+  applyAllOverrides,
   calculateAllLimits,
   featureMapToRecord,
   canPerformAction,
@@ -68,9 +69,13 @@ class PermissionResolutionService {
     // Build permission context by loading all data
     const context = await this.buildContext(userId, orgId, planId);
 
-    // Resolve features: Plan → Roles → Overrides
+    // Resolve features: Plan → Org Overrides → Roles → User Overrides
     let features = mergeFeatures(context.planFeatures, context.rolePermissions);
-    features = applyFeatureOverrides(features, context.userOverrides);
+    features = applyAllOverrides(
+      features,
+      context.organizationOverrides,
+      context.userOverrides
+    );
 
     // Calculate limits with usage
     const limits = calculateAllLimits(context);
@@ -113,22 +118,40 @@ class PermissionResolutionService {
     planId?: number
   ): Promise<PermissionContext> {
     // Load data in parallel for performance
-    const [userRolePermissions, userOverrides, userUsage] = await Promise.all([
+    const [
+      userRolePermissions,
+      userOverrides,
+      organizationOverrides,
+      userUsage,
+    ] = await Promise.all([
       userRoleService.getUserRolePermissions(userId, orgId),
       overrideService.getActiveOverrides(userId),
+      organizationOverrideService.getActiveOrganizationOverrides(orgId),
       usageService.getUserUsage(userId),
     ]);
 
     // Build role permissions set
     const rolePermissions = new Set<string>(userRolePermissions);
 
-    // Build override map
+    // Build user override map
     const userOverrideMap = new Map<
       string,
       { type: string; value: string | null }
     >();
     for (const override of userOverrides) {
       userOverrideMap.set(override.featureSlug, {
+        type: override.overrideType,
+        value: override.value,
+      });
+    }
+
+    // Build organization override map
+    const orgOverrideMap = new Map<
+      string,
+      { type: string; value: string | null }
+    >();
+    for (const override of organizationOverrides) {
+      orgOverrideMap.set(override.featureSlug, {
         type: override.overrideType,
         value: override.value,
       });
@@ -168,6 +191,7 @@ class PermissionResolutionService {
       planLimits,
       rolePermissions,
       userOverrides: userOverrideMap,
+      organizationOverrides: orgOverrideMap,
       usage: usageMap,
     };
   }
