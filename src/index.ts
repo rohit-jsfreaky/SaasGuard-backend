@@ -5,6 +5,7 @@ import express, {
   type ErrorRequestHandler,
 } from "express";
 import cors from "cors";
+import swaggerUi from "swagger-ui-express";
 import { clerkMiddleware } from "@clerk/express";
 import { env, isDevelopment } from "./config/environment.js";
 import type {
@@ -20,6 +21,7 @@ import overrideRoutes from "./controllers/override.controller.js";
 import usageRoutes from "./controllers/usage.controller.js";
 import permissionRoutes from "./controllers/permission.controller.js";
 import adminRoutes from "./routes/admin/index.js";
+import { swaggerSpec } from "./docs/swagger.js";
 
 // Create Express application
 const app = express();
@@ -118,6 +120,26 @@ app.use("/api/v1/admin", overrideRoutes);
 app.use("/api/v1/admin", usageRoutes);
 app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1", permissionRoutes);
+
+// =============================================================================
+// API DOCUMENTATION
+// =============================================================================
+
+// Swagger UI - Interactive API documentation
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "SaaS Guard API Documentation",
+  })
+);
+
+// Raw OpenAPI spec as JSON
+app.get("/api-docs/spec", (_req: Request, res: Response) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
+});
 
 // =============================================================================
 // ERROR HANDLING
