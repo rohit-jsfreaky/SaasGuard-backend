@@ -16,3 +16,7 @@ export type { PaginationOptions } from "./user.service.js";
 
 export { organizationService } from "./organization.service.js";
 export type { CreateOrganizationInput } from "./organization.service.js";
+
+// Feature service
+export { featureService } from "./feature.service.js";
+export type { FeatureListResult } from "./feature.service.js";

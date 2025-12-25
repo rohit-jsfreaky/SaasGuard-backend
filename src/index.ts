@@ -13,6 +13,7 @@ import type {
   UserContext,
 } from "./types/index.js";
 import { authMiddleware } from "./middleware/auth.middleware.js";
+import featureRoutes from "./controllers/feature.controller.js";
 
 // Create Express application
 const app = express();
@@ -103,10 +104,12 @@ app.get("/api/v1/me", (req, res: Response<ApiResponse<UserContext | null>>) => {
   });
 });
 
+// Mount API routes
+app.use("/api/v1/admin/features", featureRoutes);
+
 // TODO: Mount additional API routes here
 // app.use("/api/v1/users", userRoutes);
 // app.use("/api/v1/organizations", organizationRoutes);
-// app.use("/api/v1/features", featureRoutes);
 // app.use("/api/v1/plans", planRoutes);
 // app.use("/api/v1/roles", roleRoutes);
 // app.use("/api/v1/permissions", permissionRoutes);
