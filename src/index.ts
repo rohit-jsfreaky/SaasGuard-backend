@@ -15,6 +15,7 @@ import type {
 import { authMiddleware } from "./middleware/auth.middleware.js";
 import featureRoutes from "./controllers/feature.controller.js";
 import planRoutes from "./controllers/plan.controller.js";
+import roleRoutes from "./controllers/role.controller.js";
 
 // Create Express application
 const app = express();
@@ -108,12 +109,11 @@ app.get("/api/v1/me", (req, res: Response<ApiResponse<UserContext | null>>) => {
 // Mount API routes
 app.use("/api/v1/admin/features", featureRoutes);
 app.use("/api/v1/admin/plans", planRoutes);
+app.use("/api/v1/admin", roleRoutes);
 
 // TODO: Mount additional API routes here
 // app.use("/api/v1/users", userRoutes);
 // app.use("/api/v1/organizations", organizationRoutes);
-// app.use("/api/v1/roles", roleRoutes);
-// app.use("/api/v1/permissions", permissionRoutes);
 
 // =============================================================================
 // ERROR HANDLING

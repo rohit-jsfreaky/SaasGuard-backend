@@ -29,3 +29,11 @@ export { planFeatureService } from "./plan-feature.service.js";
 export type { PlanFeatureWithDetails } from "./plan-feature.service.js";
 
 export { planLimitService } from "./plan-limit.service.js";
+
+// Role services
+export { roleService } from "./role.service.js";
+export type { RoleListResult } from "./role.service.js";
+
+export { rolePermissionService } from "./role-permission.service.js";
+
+export { userRoleService } from "./user-role.service.js";
