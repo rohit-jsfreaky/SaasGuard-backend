@@ -37,3 +37,6 @@ export type { RoleListResult } from "./role.service.js";
 export { rolePermissionService } from "./role-permission.service.js";
 
 export { userRoleService } from "./user-role.service.js";
+
+// Override service
+export { overrideService } from "./override.service.js";
