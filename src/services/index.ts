@@ -20,3 +20,12 @@ export type { CreateOrganizationInput } from "./organization.service.js";
 // Feature service
 export { featureService } from "./feature.service.js";
 export type { FeatureListResult } from "./feature.service.js";
+
+// Plan services
+export { planService } from "./plan.service.js";
+export type { PlanListResult } from "./plan.service.js";
+
+export { planFeatureService } from "./plan-feature.service.js";
+export type { PlanFeatureWithDetails } from "./plan-feature.service.js";
+
+export { planLimitService } from "./plan-limit.service.js";
