@@ -17,6 +17,19 @@ import { z } from "zod";
 const router = Router();
 
 /**
+ * Create organization schema
+ */
+const CreateOrgSchema = z.object({
+  name: z.string().min(1).max(255),
+  slug: z
+    .string()
+    .min(1)
+    .max(255)
+    .regex(/^[a-z0-9-]+$/)
+    .optional(),
+});
+
+/**
  * Update organization schema
  */
 const UpdateOrgSchema = z.object({
@@ -58,6 +71,59 @@ interface MemberListResponse {
 // ============================================================================
 // ORGANIZATION CRUD
 // ============================================================================
+
+/**
+ * POST /admin/organizations
+ * Create a new organization
+ */
+router.post(
+  "/organizations",
+  requireAuth,
+  async (
+    req: Request,
+    res: Response<ApiResponse<Organization> | ApiErrorResponse>
+  ): Promise<void> => {
+    try {
+      const parsed = CreateOrgSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({
+          success: false,
+          error: {
+            code: "VALIDATION_ERROR",
+            message: "Invalid input",
+            details: parsed.error.flatten().fieldErrors as Record<
+              string,
+              unknown
+            >,
+          },
+        });
+        return;
+      }
+
+      // Create organization
+      const org = await organizationService.createOrganization({
+        name: parsed.data.name,
+        slug: parsed.data.slug,
+        clerkOrgId: req.user?.userId, // Associate with creating user
+      });
+
+      res.status(201).json({
+        success: true,
+        data: org,
+        message: "Organization created successfully",
+      });
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Failed to create organization";
+      res.status(500).json({
+        success: false,
+        error: { code: "CREATE_FAILED", message },
+      });
+    }
+  }
+);
 
 /**
  * GET /admin/organizations/:orgId
