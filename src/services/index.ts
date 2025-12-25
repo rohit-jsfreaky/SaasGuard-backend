@@ -40,3 +40,9 @@ export { userRoleService } from "./user-role.service.js";
 
 // Override service
 export { overrideService } from "./override.service.js";
+
+// Usage service
+export { usageService } from "./usage.service.js";
+
+// Permission Resolution service
+export { permissionResolutionService } from "./permission-resolution.service.js";

@@ -145,6 +145,15 @@ export function rolePermissionsKey(roleId: number): string {
 }
 
 /**
+ * Generate cache key for resolved permission map
+ * @param userId - User ID
+ * @param orgId - Organization ID
+ */
+export function resolvedPermissionsKey(userId: number, orgId: number): string {
+  return `${PREFIX}:permissions:${userId}:${orgId}`;
+}
+
+/**
  * Cache key patterns for bulk invalidation
  */
 export const CachePatterns = {
