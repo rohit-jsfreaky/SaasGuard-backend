@@ -5,8 +5,14 @@ import express, {
   type ErrorRequestHandler,
 } from "express";
 import cors from "cors";
+import { clerkMiddleware } from "@clerk/express";
 import { env, isDevelopment } from "./config/environment.js";
-import type { ApiErrorResponse, ApiResponse } from "./types/index.js";
+import type {
+  ApiErrorResponse,
+  ApiResponse,
+  UserContext,
+} from "./types/index.js";
+import { authMiddleware } from "./middleware/auth.middleware.js";
 
 // Create Express application
 const app = express();
@@ -40,6 +46,9 @@ if (isDevelopment) {
     next();
   });
 }
+
+// Apply Clerk middleware globally (parses JWT from cookies/headers)
+app.use(clerkMiddleware());
 
 // =============================================================================
 // ROUTES
@@ -79,9 +88,27 @@ app.get(
   }
 );
 
-// TODO: Mount API routes here
-// app.use("/api/v1/auth", authRoutes);
-// app.use("/api/v1/tenants", tenantRoutes);
+// =============================================================================
+// PROTECTED ROUTES (require authentication)
+// =============================================================================
+
+// Apply auth middleware to all /api/v1/* routes (except public ones)
+app.use("/api/v1", authMiddleware);
+
+// Current user endpoint
+app.get("/api/v1/me", (req, res: Response<ApiResponse<UserContext | null>>) => {
+  res.status(200).json({
+    success: true,
+    data: req.user ?? null,
+  });
+});
+
+// TODO: Mount additional API routes here
+// app.use("/api/v1/users", userRoutes);
+// app.use("/api/v1/organizations", organizationRoutes);
+// app.use("/api/v1/features", featureRoutes);
+// app.use("/api/v1/plans", planRoutes);
+// app.use("/api/v1/roles", roleRoutes);
 // app.use("/api/v1/permissions", permissionRoutes);
 
 // =============================================================================

@@ -9,11 +9,11 @@ export interface UserContext {
   /** User's primary email */
   email: string;
   /** User's display name */
-  name?: string;
+  name?: string | undefined;
   /** Organization ID if applicable */
-  organizationId?: string;
+  organizationId?: string | undefined;
   /** Organization role if applicable */
-  organizationRole?: string;
+  organizationRole?: string | undefined;
   /** Session ID */
   sessionId: string;
 }
