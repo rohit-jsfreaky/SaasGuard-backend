@@ -2,42 +2,47 @@ import express, {
   type Request,
   type Response,
   type NextFunction,
-  type ErrorRequestHandler,
 } from "express";
 import cors from "cors";
 import swaggerUi from "swagger-ui-express";
 import { clerkMiddleware } from "@clerk/express";
 import { env, isDevelopment } from "./config/environment.js";
-import type {
-  ApiErrorResponse,
-  ApiResponse,
-  UserContext,
-} from "./types/index.js";
+import { logger, logStartup } from "./config/logger.js";
+import type { ApiResponse, UserContext } from "./types/index.js";
 import { authMiddleware } from "./middleware/auth.middleware.js";
+import { requestIdMiddleware } from "./middleware/request-id.middleware.js";
+import {
+  errorHandler,
+  notFoundHandler,
+} from "./middleware/error-handler.middleware.js";
 import featureRoutes from "./controllers/feature.controller.js";
 import planRoutes from "./controllers/plan.controller.js";
 import roleRoutes from "./controllers/role.controller.js";
 import overrideRoutes from "./controllers/override.controller.js";
 import usageRoutes from "./controllers/usage.controller.js";
 import permissionRoutes from "./controllers/permission.controller.js";
+import healthRoutes from "./controllers/health.controller.js";
 import adminRoutes from "./routes/admin/index.js";
 import { swaggerSpec } from "./docs/swagger.js";
+import { registerShutdownHandlers } from "./utils/graceful-shutdown.js";
 
 // Create Express application
 const app = express();
 
 // =============================================================================
-// MIDDLEWARE
+// CORE MIDDLEWARE
 // =============================================================================
 
+// Request ID for tracking
+app.use(requestIdMiddleware);
+
 // CORS configuration
+const corsOrigins = process.env["CORS_ORIGINS"]?.split(",") || [];
 app.use(
   cors({
-    origin: isDevelopment
-      ? "*"
-      : process.env["ALLOWED_ORIGINS"]?.split(",") || [],
+    origin: isDevelopment ? "*" : corsOrigins,
     methods: ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
+    allowedHeaders: ["Content-Type", "Authorization", "X-Request-ID"],
     credentials: true,
   })
 );
@@ -48,10 +53,18 @@ app.use(express.json({ limit: "10mb" }));
 // Parse URL-encoded bodies
 app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 
-// Request logging in development
-if (isDevelopment) {
+// Request logging
+if (process.env["ENABLE_REQUEST_LOGGING"] !== "false") {
   app.use((req: Request, _res: Response, next: NextFunction) => {
-    console.log(`${new Date().toISOString()} | ${req.method} ${req.path}`);
+    logger.info(
+      {
+        requestId: req.requestId,
+        method: req.method,
+        path: req.path,
+        query: Object.keys(req.query).length > 0 ? req.query : undefined,
+      },
+      `${req.method} ${req.path}`
+    );
     next();
   });
 }
@@ -60,42 +73,49 @@ if (isDevelopment) {
 app.use(clerkMiddleware());
 
 // =============================================================================
-// ROUTES
+// PUBLIC ROUTES (no authentication required)
 // =============================================================================
 
-// Health check endpoint
-app.get(
-  "/health",
-  (
-    _req: Request,
-    res: Response<ApiResponse<{ status: string; timestamp: string }>>
-  ) => {
-    res.status(200).json({
-      success: true,
-      data: {
-        status: "healthy",
-        timestamp: new Date().toISOString(),
-      },
-    });
-  }
-);
+// Health check endpoints
+app.use("/health", healthRoutes);
 
 // API version endpoint
 app.get(
   "/api/v1",
   (
     _req: Request,
-    res: Response<ApiResponse<{ version: string; name: string }>>
+    res: Response<ApiResponse<{ version: string; name: string; docs: string }>>
   ) => {
     res.status(200).json({
       success: true,
       data: {
         version: "1.0.0",
         name: "SaaS Guard API",
+        docs: "/api-docs",
       },
     });
   }
 );
+
+// =============================================================================
+// API DOCUMENTATION
+// =============================================================================
+
+// Swagger UI - Interactive API documentation
+app.use(
+  "/api-docs",
+  swaggerUi.serve,
+  swaggerUi.setup(swaggerSpec, {
+    customCss: ".swagger-ui .topbar { display: none }",
+    customSiteTitle: "SaaS Guard API Documentation",
+  })
+);
+
+// Raw OpenAPI spec as JSON
+app.get("/api-docs/spec", (_req: Request, res: Response) => {
+  res.setHeader("Content-Type", "application/json");
+  res.send(swaggerSpec);
+});
 
 // =============================================================================
 // PROTECTED ROUTES (require authentication)
@@ -122,63 +142,13 @@ app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1", permissionRoutes);
 
 // =============================================================================
-// API DOCUMENTATION
-// =============================================================================
-
-// Swagger UI - Interactive API documentation
-app.use(
-  "/api-docs",
-  swaggerUi.serve,
-  swaggerUi.setup(swaggerSpec, {
-    customCss: ".swagger-ui .topbar { display: none }",
-    customSiteTitle: "SaaS Guard API Documentation",
-  })
-);
-
-// Raw OpenAPI spec as JSON
-app.get("/api-docs/spec", (_req: Request, res: Response) => {
-  res.setHeader("Content-Type", "application/json");
-  res.send(swaggerSpec);
-});
-
-// =============================================================================
 // ERROR HANDLING
 // =============================================================================
 
 // 404 handler - must be after all routes
-app.use((_req: Request, res: Response<ApiErrorResponse>) => {
-  res.status(404).json({
-    success: false,
-    error: {
-      code: "NOT_FOUND",
-      message: "The requested resource was not found",
-    },
-  });
-});
+app.use(notFoundHandler);
 
 // Global error handler - must be last
-const errorHandler: ErrorRequestHandler = (
-  err: Error & { statusCode?: number; code?: string },
-  _req: Request,
-  res: Response<ApiErrorResponse>,
-  _next: NextFunction
-) => {
-  console.error("Error:", err);
-
-  const statusCode = err.statusCode || 500;
-  const code = err.code || "INTERNAL_SERVER_ERROR";
-  const message = isDevelopment ? err.message : "An unexpected error occurred";
-
-  res.status(statusCode).json({
-    success: false,
-    error: {
-      code,
-      message,
-      ...(isDevelopment && { details: { stack: err.stack } }),
-    },
-  });
-};
-
 app.use(errorHandler);
 
 // =============================================================================
@@ -188,31 +158,19 @@ app.use(errorHandler);
 const PORT = env.PORT;
 
 const server = app.listen(PORT, () => {
-  console.log("🚀 SaaS Guard API Server");
-  console.log(`   Environment: ${env.NODE_ENV}`);
-  console.log(`   Port: ${PORT}`);
-  console.log(`   Health: http://localhost:${PORT}/health`);
-  console.log(`   API: http://localhost:${PORT}/api/v1`);
+  logStartup(PORT, env.NODE_ENV);
+
+  if (isDevelopment) {
+    console.log("");
+    console.log("📍 Available endpoints:");
+    console.log(`   Health:  http://localhost:${PORT}/health`);
+    console.log(`   API:     http://localhost:${PORT}/api/v1`);
+    console.log(`   Docs:    http://localhost:${PORT}/api-docs`);
+    console.log("");
+  }
 });
 
-// Graceful shutdown
-const shutdown = (signal: string) => {
-  console.log(`\n${signal} received. Shutting down gracefully...`);
-  server.close(() => {
-    console.log("HTTP server closed");
-    process.exit(0);
-  });
-
-  // Force close after 10 seconds
-  setTimeout(() => {
-    console.error(
-      "Could not close connections in time, forcefully shutting down"
-    );
-    process.exit(1);
-  }, 10000);
-};
-
-process.on("SIGTERM", () => shutdown("SIGTERM"));
-process.on("SIGINT", () => shutdown("SIGINT"));
+// Register graceful shutdown handlers
+registerShutdownHandlers(server);
 
 export default app;
