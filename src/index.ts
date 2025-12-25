@@ -19,6 +19,7 @@ import roleRoutes from "./controllers/role.controller.js";
 import overrideRoutes from "./controllers/override.controller.js";
 import usageRoutes from "./controllers/usage.controller.js";
 import permissionRoutes from "./controllers/permission.controller.js";
+import adminRoutes from "./routes/admin/index.js";
 
 // Create Express application
 const app = express();
@@ -115,11 +116,8 @@ app.use("/api/v1/admin/plans", planRoutes);
 app.use("/api/v1/admin", roleRoutes);
 app.use("/api/v1/admin", overrideRoutes);
 app.use("/api/v1/admin", usageRoutes);
+app.use("/api/v1/admin", adminRoutes);
 app.use("/api/v1", permissionRoutes);
-
-// TODO: Mount additional API routes here
-// app.use("/api/v1/users", userRoutes);
-// app.use("/api/v1/organizations", organizationRoutes);
 
 // =============================================================================
 // ERROR HANDLING
