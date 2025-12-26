@@ -15,7 +15,7 @@ export type OverrideType = z.infer<typeof OverrideTypeEnum>;
  * Schema for creating a new override
  */
 export const CreateOverrideSchema = z.object({
-  userId: z.number().int().positive("User ID is required"),
+  userId: z.string().min(1, "User ID is required"),
   featureSlug: z.string().min(1, "Feature slug is required").max(255),
   overrideType: OverrideTypeEnum,
   value: z.string().max(255).optional().nullable(),

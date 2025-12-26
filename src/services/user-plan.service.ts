@@ -6,10 +6,10 @@ import { isDevelopment } from "../config/environment.js";
 
 class UserPlanService {
   async assignPlanToUser(
-    userId: number,
+    userId: string,
     planId: number,
     organizationId: number,
-    assignedBy?: number
+    assignedBy?: string
   ): Promise<UserPlan> {
     const existing = await db
       .select()
@@ -75,7 +75,7 @@ class UserPlanService {
   }
 
   async getUserPlanInOrganization(
-    userId: number,
+    userId: string,
     organizationId: number
   ): Promise<(UserPlan & { plan: Plan }) | null> {
     const result = await db
@@ -123,7 +123,7 @@ class UserPlanService {
   }
 
   async getUserPlansForOrganization(
-    userId: number,
+    userId: string,
     organizationId: number,
     limit: number = 10
   ): Promise<(UserPlan & { plan: Plan })[]> {
@@ -162,7 +162,7 @@ class UserPlanService {
   }
 
   async deactivateUserPlanInOrganization(
-    userId: number,
+    userId: string,
     organizationId: number
   ): Promise<void> {
     await db
@@ -185,7 +185,7 @@ class UserPlanService {
   }
 
   async removeUserPlanInOrganization(
-    userId: number,
+    userId: string,
     organizationId: number
   ): Promise<void> {
     await db
@@ -204,7 +204,10 @@ class UserPlanService {
     }
   }
 
-  async getUsersOnPlan(planId: number, limit: number = 50): Promise<number[]> {
+  async getUsersOnPlan(
+    planId: number,
+    limit: number = 50
+  ): Promise<string[]> {
     const result = await db
       .select({ userId: userPlans.userId })
       .from(userPlans)

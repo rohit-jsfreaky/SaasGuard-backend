@@ -17,7 +17,7 @@ class OrganizationOverrideService {
     overrideType: OverrideType,
     value?: string | null,
     expiresAt?: Date | null,
-    createdBy?: number
+    createdBy?: string
   ): Promise<OrganizationOverride> {
     const existing = await this.getOrganizationOverrideForFeature(
       organizationId,

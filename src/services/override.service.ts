@@ -23,12 +23,12 @@ class OverrideService {
    * @returns Created override
    */
   async createOverride(
-    userId: number,
+    userId: string,
     featureSlug: string,
     overrideType: OverrideType,
     value?: string | null,
     expiresAt?: Date | null,
-    createdBy?: number
+    createdBy?: string
   ): Promise<Override> {
     // Check for existing active override for this feature
     const existing = await this.getOverrideForFeature(userId, featureSlug);
@@ -76,7 +76,7 @@ class OverrideService {
    * @param userId - User ID
    * @returns List of active overrides
    */
-  async getActiveOverrides(userId: number): Promise<Override[]> {
+  async getActiveOverrides(userId: string): Promise<Override[]> {
     // Try cache first
     const cacheKey = userOverridesKey(userId);
     const cached = await cacheService.get<Override[]>(cacheKey);
@@ -111,7 +111,7 @@ class OverrideService {
    * @returns Override or null
    */
   async getOverrideForFeature(
-    userId: number,
+    userId: string,
     featureSlug: string
   ): Promise<Override | null> {
     const now = new Date();
@@ -258,7 +258,7 @@ class OverrideService {
    * @returns List of all overrides
    */
   async getAllUserOverrides(
-    userId: number,
+    userId: string,
     limit: number = 50
   ): Promise<Override[]> {
     const result = await db
@@ -278,7 +278,7 @@ class OverrideService {
    * @returns True if feature is explicitly enabled
    */
   async isFeatureEnabled(
-    userId: number,
+    userId: string,
     featureSlug: string
   ): Promise<boolean | null> {
     const override = await this.getOverrideForFeature(userId, featureSlug);
@@ -303,7 +303,7 @@ class OverrideService {
    * @returns Override limit or null
    */
   async getLimitOverride(
-    userId: number,
+    userId: string,
     featureSlug: string
   ): Promise<number | null> {
     const override = await this.getOverrideForFeature(userId, featureSlug);
@@ -338,7 +338,7 @@ class OverrideService {
   /**
    * Invalidate cache for a user's overrides
    */
-  private async invalidateCache(userId: number): Promise<void> {
+  private async invalidateCache(userId: string): Promise<void> {
     await cacheService.del(userOverridesKey(userId));
   }
 }

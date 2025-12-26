@@ -6,6 +6,7 @@ import { cacheService, CacheTTL } from "./cache.service.js";
 import { userRolesKey, userPermissionsKey } from "../utils/cache-keys.js";
 import { rolePermissionService } from "./role-permission.service.js";
 import { isDevelopment } from "../config/environment.js";
+import { organizationService } from "./organization.service.js";
 
 /**
  * User Role Service
@@ -19,19 +20,22 @@ class UserRoleService {
    * @param orgId - Organization ID
    */
   async assignRoleToUser(
-    userId: number,
+    userId: string,
     roleId: number,
-    orgId: number
+    orgId: number | string
   ): Promise<UserRole> {
+    const resolvedUserId = userId;
+    const resolvedOrgId = await this.resolveOrganizationId(orgId);
+
     // Check if already assigned
     const existing = await db
       .select()
       .from(userRoles)
       .where(
         and(
-          eq(userRoles.userId, userId),
+          eq(userRoles.userId, resolvedUserId),
           eq(userRoles.roleId, roleId),
-          eq(userRoles.organizationId, orgId)
+          eq(userRoles.organizationId, resolvedOrgId)
         )
       )
       .limit(1);
@@ -43,9 +47,9 @@ class UserRoleService {
 
     // Assign role
     const newUserRole: NewUserRole = {
-      userId,
+      userId: resolvedUserId,
       roleId,
-      organizationId: orgId,
+      organizationId: resolvedOrgId,
     };
 
     const created = await db.insert(userRoles).values(newUserRole).returning();
@@ -55,11 +59,11 @@ class UserRoleService {
       throw new Error("Failed to assign role to user");
     }
 
-    await this.invalidateCache(userId, orgId);
+    await this.invalidateCache(resolvedUserId, resolvedOrgId);
 
     if (isDevelopment) {
       console.log(
-        `[UserRoleService] Assigned role ${roleId} to user ${userId} in org ${orgId}`
+        `[UserRoleService] Assigned role ${roleId} to user ${resolvedUserId} in org ${resolvedOrgId}`
       );
     }
 
@@ -73,32 +77,35 @@ class UserRoleService {
    * @param orgId - Organization ID
    */
   async removeRoleFromUser(
-    userId: number,
+    userId: string,
     roleId: number,
-    orgId: number
+    orgId: number | string
   ): Promise<void> {
+    const resolvedUserId = userId;
+    const resolvedOrgId = await this.resolveOrganizationId(orgId);
+
     const result = await db
       .delete(userRoles)
       .where(
         and(
-          eq(userRoles.userId, userId),
+          eq(userRoles.userId, resolvedUserId),
           eq(userRoles.roleId, roleId),
-          eq(userRoles.organizationId, orgId)
+          eq(userRoles.organizationId, resolvedOrgId)
         )
       )
       .returning({ id: userRoles.id });
 
     if (result.length === 0) {
       throw new Error(
-        `Role ${roleId} not assigned to user ${userId} in org ${orgId}`
+        `Role ${roleId} not assigned to user ${resolvedUserId} in org ${resolvedOrgId}`
       );
     }
 
-    await this.invalidateCache(userId, orgId);
+    await this.invalidateCache(resolvedUserId, resolvedOrgId);
 
     if (isDevelopment) {
       console.log(
-        `[UserRoleService] Removed role ${roleId} from user ${userId} in org ${orgId}`
+        `[UserRoleService] Removed role ${roleId} from user ${resolvedUserId} in org ${resolvedOrgId}`
       );
     }
   }
@@ -109,9 +116,15 @@ class UserRoleService {
    * @param orgId - Organization ID
    * @returns List of roles
    */
-  async getUserRoles(userId: number, orgId: number): Promise<Role[]> {
+  async getUserRoles(
+    userId: string,
+    orgId: number | string
+  ): Promise<Role[]> {
+    const resolvedUserId = userId;
+    const resolvedOrgId = await this.resolveOrganizationId(orgId);
+
     // Try cache first
-    const cacheKey = userRolesKey(userId, orgId);
+    const cacheKey = userRolesKey(resolvedUserId, resolvedOrgId);
     const cached = await cacheService.get<Role[]>(cacheKey);
     if (cached) {
       return cached;
@@ -122,7 +135,10 @@ class UserRoleService {
       .from(userRoles)
       .innerJoin(roles, eq(userRoles.roleId, roles.id))
       .where(
-        and(eq(userRoles.userId, userId), eq(userRoles.organizationId, orgId))
+        and(
+          eq(userRoles.userId, resolvedUserId),
+          eq(userRoles.organizationId, resolvedOrgId)
+        )
       )
       .orderBy(roles.name);
 
@@ -141,18 +157,21 @@ class UserRoleService {
    * @returns Array of feature slugs
    */
   async getUserRolePermissions(
-    userId: number,
-    orgId: number
+    userId: string,
+    orgId: number | string
   ): Promise<string[]> {
+    const resolvedUserId = userId;
+    const resolvedOrgId = await this.resolveOrganizationId(orgId);
+
     // Try cache first
-    const cacheKey = userPermissionsKey(userId, orgId);
+    const cacheKey = userPermissionsKey(resolvedUserId, resolvedOrgId);
     const cached = await cacheService.get<string[]>(cacheKey);
     if (cached) {
       return cached;
     }
 
     // Get all user's roles
-    const userRolesList = await this.getUserRoles(userId, orgId);
+    const userRolesList = await this.getUserRoles(resolvedUserId, resolvedOrgId);
 
     // Aggregate permissions from all roles
     const permissionSet = new Set<string>();
@@ -180,8 +199,8 @@ class UserRoleService {
    * @returns True if user has the permission
    */
   async hasPermission(
-    userId: number,
-    orgId: number,
+    userId: string,
+    orgId: number | string,
     featureSlug: string
   ): Promise<boolean> {
     const permissions = await this.getUserRolePermissions(userId, orgId);
@@ -195,14 +214,20 @@ class UserRoleService {
    * @returns List of user role assignments
    */
   async getUserRoleAssignments(
-    userId: number,
-    orgId: number
+    userId: string,
+    orgId: number | string
   ): Promise<UserRole[]> {
+    const resolvedUserId = userId;
+    const resolvedOrgId = await this.resolveOrganizationId(orgId);
+
     const result = await db
       .select()
       .from(userRoles)
       .where(
-        and(eq(userRoles.userId, userId), eq(userRoles.organizationId, orgId))
+        and(
+          eq(userRoles.userId, resolvedUserId),
+          eq(userRoles.organizationId, resolvedOrgId)
+        )
       );
 
     return result;
@@ -211,11 +236,39 @@ class UserRoleService {
   /**
    * Invalidate cache for a user's roles and permissions
    */
-  private async invalidateCache(userId: number, orgId: number): Promise<void> {
+  private async invalidateCache(
+    userId: string,
+    orgId: number
+  ): Promise<void> {
     await cacheService.del([
       userRolesKey(userId, orgId),
       userPermissionsKey(userId, orgId),
     ]);
+  }
+
+  /**
+   * Resolve internal organization ID from Clerk or numeric input
+   */
+  private async resolveOrganizationId(
+    orgId: number | string
+  ): Promise<number> {
+    if (typeof orgId === "number") {
+      return orgId;
+    }
+
+    const parsed = Number(orgId);
+    if (!Number.isNaN(parsed) && Number.isFinite(parsed)) {
+      return parsed;
+    }
+
+    const organization = await organizationService.getOrganizationByClerkId(
+      orgId
+    );
+    if (!organization) {
+      throw new Error(`Organization not found for ID ${orgId}`);
+    }
+
+    return organization.id;
   }
 }
 

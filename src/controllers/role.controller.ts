@@ -1,4 +1,9 @@
-import { Router, type Request, type Response } from "express";
+/**
+ * Role Controller
+ * Pure controller functions for role management
+ */
+
+import type { Request, Response } from "express";
 import { roleService } from "../services/role.service.js";
 import { rolePermissionService } from "../services/role-permission.service.js";
 import { userRoleService } from "../services/user-role.service.js";
@@ -9,16 +14,15 @@ import {
   AssignRoleSchema,
 } from "../validators/role.validator.js";
 import { PaginationSchema } from "../validators/feature.validator.js";
-import type { ApiResponse, ApiErrorResponse } from "../types/index.js";
+import type { ApiResponse } from "../types/index.js";
 import type { Role, RolePermission } from "../types/db.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
-
-const router = Router();
+import { ValidationError, NotFoundError, ConflictError } from "../utils/errors.js";
+import { successResponse } from "../utils/async-handler.js";
 
 /**
  * Role list response type
  */
-interface RoleListResponse {
+export interface RoleListResponse {
   roles: Role[];
   pagination: {
     total: number;
@@ -31,674 +35,354 @@ interface RoleListResponse {
 /**
  * Role with permissions response
  */
-interface RoleWithPermissionsResponse extends Role {
+export interface RoleWithPermissionsResponse extends Role {
   permissions: RolePermission[];
 }
 
 // =============================================================================
-// ROLE CRUD ROUTES
+// ROLE CRUD CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/organizations/:orgId/roles
  * Create a new role in an organization
  */
-router.post(
-  "/organizations/:orgId/roles",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<Role> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { orgId } = req.params;
-      const orgIdNum = parseInt(orgId ?? "", 10);
-      if (isNaN(orgIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid organization ID",
-          },
-        });
-        return;
-      }
-
-      const parsed = CreateRoleSchema.safeParse({
-        ...req.body,
-        orgId: orgIdNum,
-      });
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      const { name, slug, description } = parsed.data;
-      const role = await roleService.createRole(
-        orgIdNum,
-        name,
-        slug,
-        description
-      );
-
-      res.status(201).json({
-        success: true,
-        data: role,
-        message: "Role created successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to create role";
-
-      if (message.includes("already exists")) {
-        res.status(409).json({
-          success: false,
-          error: { code: "DUPLICATE_SLUG", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "CREATE_FAILED", message },
-      });
-    }
+export async function createRole(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<Role>> {
+  const { orgId } = req.params;
+  const orgIdNum = parseInt(orgId ?? "", 10);
+  if (isNaN(orgIdNum)) {
+    throw new ValidationError("Invalid organization ID");
   }
-);
+
+  const parsed = CreateRoleSchema.safeParse({
+    ...req.body,
+    orgId: orgIdNum,
+  });
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
+  }
+
+  const { name, slug, description } = parsed.data;
+
+  try {
+    const role = await roleService.createRole(orgIdNum, name, slug, description);
+    res.statusCode = 201;
+    return successResponse(role, "Role created successfully", 201).response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create role";
+    if (message.includes("already exists")) {
+      throw new ConflictError(message);
+    }
+    throw error;
+  }
+}
 
 /**
- * GET /admin/organizations/:orgId/roles
  * List all roles in an organization
  */
-router.get(
-  "/organizations/:orgId/roles",
-  async (
-    req: Request,
-    res: Response<ApiResponse<RoleListResponse> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { orgId } = req.params;
-      const orgIdNum = parseInt(orgId ?? "", 10);
-      if (isNaN(orgIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid organization ID",
-          },
-        });
-        return;
-      }
-
-      const pagination = PaginationSchema.safeParse(req.query);
-      const { limit, offset } = pagination.success
-        ? pagination.data
-        : { limit: 50, offset: 0 };
-
-      const result = await roleService.getRolesByOrganization(orgIdNum, {
-        limit,
-        offset,
-      });
-
-      res.status(200).json({
-        success: true,
-        data: {
-          roles: result.roles,
-          pagination: {
-            total: result.total,
-            limit: result.limit,
-            offset: result.offset,
-            hasMore: result.offset + result.roles.length < result.total,
-          },
-        },
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to list roles";
-      res.status(500).json({
-        success: false,
-        error: { code: "LIST_FAILED", message },
-      });
-    }
+export async function listRoles(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<RoleListResponse>> {
+  const { orgId } = req.params;
+  const orgIdNum = parseInt(orgId ?? "", 10);
+  if (isNaN(orgIdNum)) {
+    throw new ValidationError("Invalid organization ID");
   }
-);
+
+  const pagination = PaginationSchema.safeParse(req.query);
+  const { limit, offset } = pagination.success
+    ? pagination.data
+    : { limit: 50, offset: 0 };
+
+  const result = await roleService.getRolesByOrganization(orgIdNum, {
+    limit,
+    offset,
+  });
+
+  return successResponse({
+    roles: result.roles,
+    pagination: {
+      total: result.total,
+      limit: result.limit,
+      offset: result.offset,
+      hasMore: result.offset + result.roles.length < result.total,
+    },
+  }).response;
+}
 
 /**
- * GET /admin/roles/:id
  * Get a role by ID with permissions
  */
-router.get(
-  "/roles/:id",
-  async (
-    req: Request,
-    res: Response<ApiResponse<RoleWithPermissionsResponse> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const roleId = parseInt(id ?? "", 10);
-      if (isNaN(roleId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid role ID" },
-        });
-        return;
-      }
-
-      const role = await roleService.getRoleById(roleId);
-      if (!role) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message: `Role not found: ${id}` },
-        });
-        return;
-      }
-
-      const permissions = await rolePermissionService.getRolePermissions(
-        roleId
-      );
-
-      res.status(200).json({
-        success: true,
-        data: { ...role, permissions },
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get role";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_FAILED", message },
-      });
-    }
+export async function getRole(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<RoleWithPermissionsResponse>> {
+  const { id } = req.params;
+  const roleId = parseInt(id ?? "", 10);
+  if (isNaN(roleId)) {
+    throw new ValidationError("Invalid role ID");
   }
-);
+
+  const role = await roleService.getRoleById(roleId);
+  if (!role) {
+    throw new NotFoundError("Role", roleId);
+  }
+
+  const permissions = await rolePermissionService.getRolePermissions(roleId);
+
+  return successResponse({ ...role, permissions }).response;
+}
 
 /**
- * PUT /admin/roles/:id
  * Update a role
  */
-router.put(
-  "/roles/:id",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<Role> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const roleId = parseInt(id ?? "", 10);
-      if (isNaN(roleId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid role ID" },
-        });
-        return;
-      }
-
-      const parsed = UpdateRoleSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      const updates: { name?: string; description?: string | null } = {};
-      if (parsed.data.name !== undefined) updates.name = parsed.data.name;
-      if (parsed.data.description !== undefined)
-        updates.description = parsed.data.description;
-
-      const role = await roleService.updateRole(roleId, updates);
-
-      res.status(200).json({
-        success: true,
-        data: role,
-        message: "Role updated successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to update role";
-
-      if (message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "UPDATE_FAILED", message },
-      });
-    }
+export async function updateRole(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<Role>> {
+  const { id } = req.params;
+  const roleId = parseInt(id ?? "", 10);
+  if (isNaN(roleId)) {
+    throw new ValidationError("Invalid role ID");
   }
-);
+
+  const parsed = UpdateRoleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
+  }
+
+  const updates: { name?: string; description?: string | null } = {};
+  if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+  if (parsed.data.description !== undefined) updates.description = parsed.data.description;
+
+  try {
+    const role = await roleService.updateRole(roleId, updates);
+    return successResponse(role, "Role updated successfully").response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to update role";
+    if (message.includes("not found")) {
+      throw new NotFoundError("Role", roleId);
+    }
+    throw error;
+  }
+}
 
 /**
- * DELETE /admin/roles/:id
  * Delete a role
  */
-router.delete(
-  "/roles/:id",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ deleted: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const roleId = parseInt(id ?? "", 10);
-      if (isNaN(roleId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid role ID" },
-        });
-        return;
-      }
-
-      await roleService.deleteRole(roleId);
-
-      res.status(200).json({
-        success: true,
-        data: { deleted: true },
-        message: "Role deleted successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to delete role";
-
-      if (message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      if (message.includes("Cannot delete")) {
-        res.status(409).json({
-          success: false,
-          error: { code: "ROLE_IN_USE", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "DELETE_FAILED", message },
-      });
-    }
+export async function deleteRole(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<{ deleted: boolean }>> {
+  const { id } = req.params;
+  const roleId = parseInt(id ?? "", 10);
+  if (isNaN(roleId)) {
+    throw new ValidationError("Invalid role ID");
   }
-);
+
+  try {
+    await roleService.deleteRole(roleId);
+    return successResponse({ deleted: true }, "Role deleted successfully").response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete role";
+
+    if (message.includes("not found")) {
+      throw new NotFoundError("Role", roleId);
+    }
+
+    if (message.includes("Cannot delete")) {
+      throw new ConflictError(message);
+    }
+
+    throw error;
+  }
+}
 
 // =============================================================================
-// ROLE PERMISSION ROUTES
+// ROLE PERMISSION CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/roles/:id/permissions
  * Grant a permission to a role
  */
-router.post(
-  "/roles/:id/permissions",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ granted: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const roleId = parseInt(id ?? "", 10);
-      if (isNaN(roleId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid role ID" },
-        });
-        return;
-      }
-
-      const parsed = GrantPermissionSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      await rolePermissionService.grantPermissionToRole(
-        roleId,
-        parsed.data.featureSlug
-      );
-
-      res.status(201).json({
-        success: true,
-        data: { granted: true },
-        message: "Permission granted successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to grant permission";
-      res.status(500).json({
-        success: false,
-        error: { code: "GRANT_FAILED", message },
-      });
-    }
+export async function grantPermissionToRole(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ granted: boolean }>> {
+  const { id } = req.params;
+  const roleId = parseInt(id ?? "", 10);
+  if (isNaN(roleId)) {
+    throw new ValidationError("Invalid role ID");
   }
-);
+
+  const parsed = GrantPermissionSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
+  }
+
+  await rolePermissionService.grantPermissionToRole(roleId, parsed.data.featureSlug);
+
+  res.statusCode = 201;
+  return successResponse(
+    { granted: true },
+    "Permission granted successfully",
+    201
+  ).response;
+}
 
 /**
- * GET /admin/roles/:id/permissions
  * Get all permissions for a role
  */
-router.get(
-  "/roles/:id/permissions",
-  async (
-    req: Request,
-    res: Response<ApiResponse<RolePermission[]> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const roleId = parseInt(id ?? "", 10);
-      if (isNaN(roleId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid role ID" },
-        });
-        return;
-      }
-
-      const permissions = await rolePermissionService.getRolePermissions(
-        roleId
-      );
-
-      res.status(200).json({
-        success: true,
-        data: permissions,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get permissions";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_PERMISSIONS_FAILED", message },
-      });
-    }
+export async function getRolePermissions(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<RolePermission[]>> {
+  const { id } = req.params;
+  const roleId = parseInt(id ?? "", 10);
+  if (isNaN(roleId)) {
+    throw new ValidationError("Invalid role ID");
   }
-);
+
+  const permissions = await rolePermissionService.getRolePermissions(roleId);
+  return successResponse(permissions).response;
+}
 
 /**
- * DELETE /admin/roles/:id/permissions/:featureSlug
  * Revoke a permission from a role
  */
-router.delete(
-  "/roles/:id/permissions/:featureSlug",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ revoked: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id, featureSlug } = req.params;
-      const roleId = parseInt(id ?? "", 10);
+export async function revokePermissionFromRole(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<{ revoked: boolean }>> {
+  const { id, featureSlug } = req.params;
+  const roleId = parseInt(id ?? "", 10);
 
-      if (isNaN(roleId) || !featureSlug) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid parameters" },
-        });
-        return;
-      }
-
-      await rolePermissionService.revokePermissionFromRole(roleId, featureSlug);
-
-      res.status(200).json({
-        success: true,
-        data: { revoked: true },
-        message: "Permission revoked successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to revoke permission";
-
-      if (message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "REVOKE_FAILED", message },
-      });
-    }
+  if (isNaN(roleId) || !featureSlug) {
+    throw new ValidationError("Invalid parameters");
   }
-);
+
+  try {
+    await rolePermissionService.revokePermissionFromRole(roleId, featureSlug);
+    return successResponse({ revoked: true }, "Permission revoked successfully").response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to revoke permission";
+    if (message.includes("not found")) {
+      throw new NotFoundError("Permission");
+    }
+    throw error;
+  }
+}
 
 // =============================================================================
-// USER ROLE ROUTES
+// USER ROLE CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/users/:userId/roles
  * Assign a role to a user
  */
-router.post(
-  "/users/:userId/roles",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ assigned: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId } = req.params;
-      const userIdNum = parseInt(userId ?? "", 10);
-      if (isNaN(userIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid user ID" },
-        });
-        return;
-      }
-
-      const parsed = AssignRoleSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      await userRoleService.assignRoleToUser(
-        userIdNum,
-        parsed.data.roleId,
-        parsed.data.orgId
-      );
-
-      res.status(201).json({
-        success: true,
-        data: { assigned: true },
-        message: "Role assigned successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to assign role";
-      res.status(500).json({
-        success: false,
-        error: { code: "ASSIGN_FAILED", message },
-      });
-    }
+export async function assignRoleToUser(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ assigned: boolean }>> {
+  const { userId } = req.params;
+  const trimmedUserId = userId?.trim();
+  if (!trimmedUserId) {
+    throw new ValidationError("Invalid user ID");
   }
-);
+
+  const parsed = AssignRoleSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
+  }
+
+  await userRoleService.assignRoleToUser(
+    trimmedUserId,
+    parsed.data.roleId,
+    parsed.data.orgId
+  );
+
+  res.statusCode = 201;
+  return successResponse(
+    { assigned: true },
+    "Role assigned successfully",
+    201
+  ).response;
+}
 
 /**
- * GET /admin/users/:userId/roles
  * Get all roles for a user (requires orgId query param)
  */
-router.get(
-  "/users/:userId/roles",
-  async (
-    req: Request,
-    res: Response<ApiResponse<Role[]> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId } = req.params;
-      const { orgId } = req.query;
+export async function getUserRoles(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<Role[]>> {
+  const { userId } = req.params;
+  const { orgId } = req.query;
 
-      const userIdNum = parseInt(userId ?? "", 10);
-      const orgIdNum = parseInt(orgId as string, 10);
+  const trimmedUserId = userId?.trim();
+  const orgIdNum = parseInt(orgId as string, 10);
 
-      if (isNaN(userIdNum) || isNaN(orgIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid user ID or organization ID",
-          },
-        });
-        return;
-      }
-
-      const roles = await userRoleService.getUserRoles(userIdNum, orgIdNum);
-
-      res.status(200).json({
-        success: true,
-        data: roles,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get roles";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_ROLES_FAILED", message },
-      });
-    }
+  if (!trimmedUserId || isNaN(orgIdNum)) {
+    throw new ValidationError("Invalid user ID or organization ID");
   }
-);
+
+  const roles = await userRoleService.getUserRoles(trimmedUserId, orgIdNum);
+  return successResponse(roles).response;
+}
 
 /**
- * GET /admin/users/:userId/permissions
  * Get all permissions for a user (requires orgId query param)
  */
-router.get(
-  "/users/:userId/permissions",
-  async (
-    req: Request,
-    res: Response<ApiResponse<string[]> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId } = req.params;
-      const { orgId } = req.query;
+export async function getUserRolePermissions(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<string[]>> {
+  const { userId } = req.params;
+  const { orgId } = req.query;
 
-      const userIdNum = parseInt(userId ?? "", 10);
-      const orgIdNum = parseInt(orgId as string, 10);
+  const trimmedUserId = userId?.trim();
+  const orgIdNum = parseInt(orgId as string, 10);
 
-      if (isNaN(userIdNum) || isNaN(orgIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid user ID or organization ID",
-          },
-        });
-        return;
-      }
-
-      const permissions = await userRoleService.getUserRolePermissions(
-        userIdNum,
-        orgIdNum
-      );
-
-      res.status(200).json({
-        success: true,
-        data: permissions,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get permissions";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_PERMISSIONS_FAILED", message },
-      });
-    }
+  if (!trimmedUserId || isNaN(orgIdNum)) {
+    throw new ValidationError("Invalid user ID or organization ID");
   }
-);
+
+  const permissions = await userRoleService.getUserRolePermissions(
+    trimmedUserId,
+    orgIdNum
+  );
+  return successResponse(permissions).response;
+}
 
 /**
- * DELETE /admin/users/:userId/roles/:roleId
  * Remove a role from a user (requires orgId query param)
  */
-router.delete(
-  "/users/:userId/roles/:roleId",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ removed: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId, roleId } = req.params;
-      const { orgId } = req.query;
+export async function removeRoleFromUser(
+  req: Request,
+  _res: Response
+): Promise<ApiResponse<{ removed: boolean }>> {
+  const { userId, roleId } = req.params;
+  const { orgId } = req.query;
 
-      const userIdNum = parseInt(userId ?? "", 10);
-      const roleIdNum = parseInt(roleId ?? "", 10);
-      const orgIdNum = parseInt(orgId as string, 10);
+  const trimmedUserId = userId?.trim();
+  const roleIdNum = parseInt(roleId ?? "", 10);
+  const orgIdNum = parseInt(orgId as string, 10);
 
-      if (isNaN(userIdNum) || isNaN(roleIdNum) || isNaN(orgIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid parameters" },
-        });
-        return;
-      }
-
-      await userRoleService.removeRoleFromUser(userIdNum, roleIdNum, orgIdNum);
-
-      res.status(200).json({
-        success: true,
-        data: { removed: true },
-        message: "Role removed successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to remove role";
-
-      if (message.includes("not assigned")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "REMOVE_FAILED", message },
-      });
-    }
+  if (!trimmedUserId || isNaN(roleIdNum) || isNaN(orgIdNum)) {
+    throw new ValidationError("Invalid parameters");
   }
-);
 
-export default router;
+  try {
+    await userRoleService.removeRoleFromUser(trimmedUserId, roleIdNum, orgIdNum);
+    return successResponse({ removed: true }, "Role removed successfully").response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to remove role";
+    if (message.includes("not assigned")) {
+      throw new NotFoundError("User role");
+    }
+    throw error;
+  }
+}

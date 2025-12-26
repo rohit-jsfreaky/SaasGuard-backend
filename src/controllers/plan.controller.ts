@@ -1,4 +1,9 @@
-import { Router, type Request, type Response } from "express";
+/**
+ * Plan Controller
+ * Pure controller functions for plan management
+ */
+
+import type { Request, Response } from "express";
 import { planService } from "../services/plan.service.js";
 import { planFeatureService } from "../services/plan-feature.service.js";
 import { planLimitService } from "../services/plan-limit.service.js";
@@ -9,17 +14,16 @@ import {
   SetLimitSchema,
 } from "../validators/plan.validator.js";
 import { PaginationSchema } from "../validators/feature.validator.js";
-import type { ApiResponse, ApiErrorResponse } from "../types/index.js";
+import type { ApiResponse } from "../types/index.js";
 import type { Plan, PlanLimit } from "../types/db.js";
 import type { PlanFeatureWithDetails } from "../services/plan-feature.service.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
-
-const router = Router();
+import { ValidationError, NotFoundError, ConflictError } from "../utils/errors.js";
+import { successResponse } from "../utils/async-handler.js";
 
 /**
  * Plan list response type
  */
-interface PlanListResponse {
+export interface PlanListResponse {
   plans: Plan[];
   pagination: {
     total: number;
@@ -32,594 +36,313 @@ interface PlanListResponse {
 /**
  * Plan with features response
  */
-interface PlanWithFeaturesResponse extends Plan {
+export interface PlanWithFeaturesResponse extends Plan {
   features: PlanFeatureWithDetails[];
   limits: PlanLimit[];
 }
 
 // =============================================================================
-// PLAN CRUD ROUTES
+// PLAN CRUD CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/plans
  * Create a new plan
  */
-router.post(
-  "/",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<Plan> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const parsed = CreatePlanSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      const { name, slug, description } = parsed.data;
-      const plan = await planService.createPlan(name, slug, description);
-
-      res.status(201).json({
-        success: true,
-        data: plan,
-        message: "Plan created successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to create plan";
-
-      if (message.includes("already exists")) {
-        res.status(409).json({
-          success: false,
-          error: { code: "DUPLICATE_SLUG", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "CREATE_FAILED", message },
-      });
-    }
+export async function createPlan(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<Plan>> {
+  const parsed = CreatePlanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
   }
-);
+
+  const { name, slug, description } = parsed.data;
+
+  try {
+    const plan = await planService.createPlan(name, slug, description);
+    res.statusCode = 201;
+    return successResponse(plan, "Plan created successfully", 201).response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to create plan";
+    if (message.includes("already exists")) {
+      throw new ConflictError(message);
+    }
+    throw error;
+  }
+}
 
 /**
- * GET /admin/plans
  * List all plans
  */
-router.get(
-  "/",
-  async (
-    req: Request,
-    res: Response<ApiResponse<PlanListResponse> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const pagination = PaginationSchema.safeParse(req.query);
-      const { limit, offset } = pagination.success
-        ? pagination.data
-        : { limit: 50, offset: 0 };
+export async function listPlans(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<PlanListResponse>> {
+  const pagination = PaginationSchema.safeParse(req.query);
+  const { limit, offset } = pagination.success
+    ? pagination.data
+    : { limit: 50, offset: 0 };
 
-      const result = await planService.getAllPlans({ limit, offset });
+  const result = await planService.getAllPlans({ limit, offset });
 
-      res.status(200).json({
-        success: true,
-        data: {
-          plans: result.plans,
-          pagination: {
-            total: result.total,
-            limit: result.limit,
-            offset: result.offset,
-            hasMore: result.offset + result.plans.length < result.total,
-          },
-        },
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to list plans";
-      res.status(500).json({
-        success: false,
-        error: { code: "LIST_FAILED", message },
-      });
-    }
-  }
-);
+  return successResponse({
+    plans: result.plans,
+    pagination: {
+      total: result.total,
+      limit: result.limit,
+      offset: result.offset,
+      hasMore: result.offset + result.plans.length < result.total,
+    },
+  }).response;
+}
 
 /**
- * GET /admin/plans/:id
  * Get a plan by ID with features and limits
  */
-router.get(
-  "/:id",
-  async (
-    req: Request,
-    res: Response<ApiResponse<PlanWithFeaturesResponse> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      if (!id) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Plan ID is required" },
-        });
-        return;
-      }
-
-      const plan = await planService.getPlan(id);
-      if (!plan) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message: `Plan not found: ${id}` },
-        });
-        return;
-      }
-
-      // Get features and limits
-      const [features, limits] = await Promise.all([
-        planFeatureService.getPlanFeatures(plan.id),
-        planLimitService.getPlanLimits(plan.id),
-      ]);
-
-      res.status(200).json({
-        success: true,
-        data: { ...plan, features, limits },
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get plan";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_FAILED", message },
-      });
-    }
+export async function getPlan(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<PlanWithFeaturesResponse>> {
+  const { id } = req.params;
+  if (!id) {
+    throw new ValidationError("Plan ID is required");
   }
-);
+
+  const plan = await planService.getPlan(id);
+  if (!plan) {
+    throw new NotFoundError("Plan", id);
+  }
+
+  const [features, limits] = await Promise.all([
+    planFeatureService.getPlanFeatures(plan.id),
+    planLimitService.getPlanLimits(plan.id),
+  ]);
+
+  return successResponse({ ...plan, features, limits }).response;
+}
 
 /**
- * PUT /admin/plans/:id
  * Update a plan
  */
-router.put(
-  "/:id",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<Plan> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      if (!id) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Plan ID is required" },
-        });
-        return;
-      }
-
-      const planId = parseInt(id, 10);
-      if (isNaN(planId)) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Plan ID must be a number",
-          },
-        });
-        return;
-      }
-
-      const parsed = UpdatePlanSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      const updates: { name?: string; description?: string | null } = {};
-      if (parsed.data.name !== undefined) updates.name = parsed.data.name;
-      if (parsed.data.description !== undefined)
-        updates.description = parsed.data.description;
-
-      const plan = await planService.updatePlan(planId, updates);
-
-      res.status(200).json({
-        success: true,
-        data: plan,
-        message: "Plan updated successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to update plan";
-
-      if (message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "UPDATE_FAILED", message },
-      });
-    }
+export async function updatePlan(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<Plan>> {
+  const { id } = req.params;
+  if (!id) {
+    throw new ValidationError("Plan ID is required");
   }
-);
+
+  const planId = parseInt(id, 10);
+  if (isNaN(planId)) {
+    throw new ValidationError("Plan ID must be a number");
+  }
+
+  const parsed = UpdatePlanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
+  }
+
+  const updates: { name?: string; description?: string | null } = {};
+  if (parsed.data.name !== undefined) updates.name = parsed.data.name;
+  if (parsed.data.description !== undefined) updates.description = parsed.data.description;
+
+  try {
+    const plan = await planService.updatePlan(planId, updates);
+    return successResponse(plan, "Plan updated successfully").response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to update plan";
+    if (message.includes("not found")) {
+      throw new NotFoundError("Plan", planId);
+    }
+    throw error;
+  }
+}
 
 /**
- * DELETE /admin/plans/:id
  * Delete a plan
  */
-router.delete(
-  "/:id",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ deleted: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      if (!id) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Plan ID is required" },
-        });
-        return;
-      }
-
-      const planId = parseInt(id, 10);
-      if (isNaN(planId)) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Plan ID must be a number",
-          },
-        });
-        return;
-      }
-
-      await planService.deletePlan(planId);
-
-      res.status(200).json({
-        success: true,
-        data: { deleted: true },
-        message: "Plan deleted successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to delete plan";
-
-      if (message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "DELETE_FAILED", message },
-      });
-    }
+export async function deletePlan(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ deleted: boolean }>> {
+  const { id } = req.params;
+  if (!id) {
+    throw new ValidationError("Plan ID is required");
   }
-);
+
+  const planId = parseInt(id, 10);
+  if (isNaN(planId)) {
+    throw new ValidationError("Plan ID must be a number");
+  }
+
+  try {
+    await planService.deletePlan(planId);
+    return successResponse({ deleted: true }, "Plan deleted successfully").response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to delete plan";
+    if (message.includes("not found")) {
+      throw new NotFoundError("Plan", planId);
+    }
+    throw error;
+  }
+}
 
 // =============================================================================
-// PLAN FEATURES ROUTES
+// PLAN FEATURES CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/plans/:id/features
  * Add a feature to a plan
  */
-router.post(
-  "/:id/features",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ added: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const planId = parseInt(id ?? "", 10);
-      if (isNaN(planId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid plan ID" },
-        });
-        return;
-      }
-
-      const parsed = AddFeatureToPlanSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      await planFeatureService.addFeatureToPlan(
-        planId,
-        parsed.data.featureId,
-        parsed.data.enabled
-      );
-
-      res.status(201).json({
-        success: true,
-        data: { added: true },
-        message: "Feature added to plan successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to add feature";
-      res.status(500).json({
-        success: false,
-        error: { code: "ADD_FEATURE_FAILED", message },
-      });
-    }
+export async function addFeatureToPlan(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ added: boolean }>> {
+  const { id } = req.params;
+  const planId = parseInt(id ?? "", 10);
+  if (isNaN(planId)) {
+    throw new ValidationError("Invalid plan ID");
   }
-);
+
+  const parsed = AddFeatureToPlanSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
+  }
+
+  await planFeatureService.addFeatureToPlan(
+    planId,
+    parsed.data.featureId,
+    parsed.data.enabled
+  );
+
+  res.statusCode = 201;
+  return successResponse(
+    { added: true },
+    "Feature added to plan successfully",
+    201
+  ).response;
+}
 
 /**
- * GET /admin/plans/:id/features
  * Get all features for a plan
  */
-router.get(
-  "/:id/features",
-  async (
-    req: Request,
-    res: Response<ApiResponse<PlanFeatureWithDetails[]> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const planId = parseInt(id ?? "", 10);
-      if (isNaN(planId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid plan ID" },
-        });
-        return;
-      }
-
-      const features = await planFeatureService.getPlanFeatures(planId);
-
-      res.status(200).json({
-        success: true,
-        data: features,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get features";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_FEATURES_FAILED", message },
-      });
-    }
+export async function getPlanFeatures(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<PlanFeatureWithDetails[]>> {
+  const { id } = req.params;
+  const planId = parseInt(id ?? "", 10);
+  if (isNaN(planId)) {
+    throw new ValidationError("Invalid plan ID");
   }
-);
+
+  const features = await planFeatureService.getPlanFeatures(planId);
+  return successResponse(features).response;
+}
 
 /**
- * DELETE /admin/plans/:id/features/:featureId
  * Remove a feature from a plan
  */
-router.delete(
-  "/:id/features/:featureId",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ removed: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id, featureId } = req.params;
-      const planId = parseInt(id ?? "", 10);
-      const fId = parseInt(featureId ?? "", 10);
+export async function removeFeatureFromPlan(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ removed: boolean }>> {
+  const { id, featureId } = req.params;
+  const planId = parseInt(id ?? "", 10);
+  const fId = parseInt(featureId ?? "", 10);
 
-      if (isNaN(planId) || isNaN(fId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid IDs" },
-        });
-        return;
-      }
-
-      await planFeatureService.removeFeatureFromPlan(planId, fId);
-
-      res.status(200).json({
-        success: true,
-        data: { removed: true },
-        message: "Feature removed from plan successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to remove feature";
-
-      if (message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "REMOVE_FEATURE_FAILED", message },
-      });
-    }
+  if (isNaN(planId) || isNaN(fId)) {
+    throw new ValidationError("Invalid IDs");
   }
-);
+
+  try {
+    await planFeatureService.removeFeatureFromPlan(planId, fId);
+    return successResponse(
+      { removed: true },
+      "Feature removed from plan successfully"
+    ).response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to remove feature";
+    if (message.includes("not found")) {
+      throw new NotFoundError("Plan feature");
+    }
+    throw error;
+  }
+}
 
 // =============================================================================
-// PLAN LIMITS ROUTES
+// PLAN LIMITS CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/plans/:id/limits
  * Set a limit for a feature in a plan
  */
-router.post(
-  "/:id/limits",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<PlanLimit> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const planId = parseInt(id ?? "", 10);
-      if (isNaN(planId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid plan ID" },
-        });
-        return;
-      }
-
-      const parsed = SetLimitSchema.safeParse(req.body);
-      if (!parsed.success) {
-        res.status(400).json({
-          success: false,
-          error: {
-            code: "VALIDATION_ERROR",
-            message: "Invalid input",
-            details: parsed.error.flatten().fieldErrors,
-          },
-        });
-        return;
-      }
-
-      const limit = await planLimitService.setLimitForFeature(
-        planId,
-        parsed.data.featureSlug,
-        parsed.data.maxLimit
-      );
-
-      res.status(201).json({
-        success: true,
-        data: limit,
-        message: "Limit set successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to set limit";
-      res.status(500).json({
-        success: false,
-        error: { code: "SET_LIMIT_FAILED", message },
-      });
-    }
+export async function setPlanLimit(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<PlanLimit>> {
+  const { id } = req.params;
+  const planId = parseInt(id ?? "", 10);
+  if (isNaN(planId)) {
+    throw new ValidationError("Invalid plan ID");
   }
-);
+
+  const parsed = SetLimitSchema.safeParse(req.body);
+  if (!parsed.success) {
+    throw new ValidationError("Invalid input", parsed.error.flatten().fieldErrors);
+  }
+
+  const limit = await planLimitService.setLimitForFeature(
+    planId,
+    parsed.data.featureSlug,
+    parsed.data.maxLimit
+  );
+
+  res.statusCode = 201;
+  return successResponse(limit, "Limit set successfully", 201).response;
+}
 
 /**
- * GET /admin/plans/:id/limits
  * Get all limits for a plan
  */
-router.get(
-  "/:id/limits",
-  async (
-    req: Request,
-    res: Response<ApiResponse<PlanLimit[]> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id } = req.params;
-      const planId = parseInt(id ?? "", 10);
-      if (isNaN(planId)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid plan ID" },
-        });
-        return;
-      }
-
-      const limits = await planLimitService.getPlanLimits(planId);
-
-      res.status(200).json({
-        success: true,
-        data: limits,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get limits";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_LIMITS_FAILED", message },
-      });
-    }
+export async function getPlanLimits(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<PlanLimit[]>> {
+  const { id } = req.params;
+  const planId = parseInt(id ?? "", 10);
+  if (isNaN(planId)) {
+    throw new ValidationError("Invalid plan ID");
   }
-);
+
+  const limits = await planLimitService.getPlanLimits(planId);
+  return successResponse(limits).response;
+}
 
 /**
- * DELETE /admin/plans/:id/limits/:featureSlug
  * Remove a limit from a plan (makes feature unlimited)
  */
-router.delete(
-  "/:id/limits/:featureSlug",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ removed: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { id, featureSlug } = req.params;
-      const planId = parseInt(id ?? "", 10);
+export async function removePlanLimit(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ removed: boolean }>> {
+  const { id, featureSlug } = req.params;
+  const planId = parseInt(id ?? "", 10);
 
-      if (isNaN(planId) || !featureSlug) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid parameters" },
-        });
-        return;
-      }
-
-      await planLimitService.removeLimitForFeature(planId, featureSlug);
-
-      res.status(200).json({
-        success: true,
-        data: { removed: true },
-        message: "Limit removed successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to remove limit";
-
-      if (message.includes("not found")) {
-        res.status(404).json({
-          success: false,
-          error: { code: "NOT_FOUND", message },
-        });
-        return;
-      }
-
-      res.status(500).json({
-        success: false,
-        error: { code: "REMOVE_LIMIT_FAILED", message },
-      });
-    }
+  if (isNaN(planId) || !featureSlug) {
+    throw new ValidationError("Invalid parameters");
   }
-);
 
-export default router;
+  try {
+    await planLimitService.removeLimitForFeature(planId, featureSlug);
+    return successResponse({ removed: true }, "Limit removed successfully").response;
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Failed to remove limit";
+    if (message.includes("not found")) {
+      throw new NotFoundError("Plan limit");
+    }
+    throw error;
+  }
+}

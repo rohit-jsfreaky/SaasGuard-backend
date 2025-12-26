@@ -1,17 +1,21 @@
-import { Router, type Request, type Response } from "express";
+/**
+ * Usage Controller
+ * Pure controller functions for usage management
+ */
+
+import type { Request, Response } from "express";
 import { usageService } from "../services/usage.service.js";
 import { RecordUsageSchema } from "../validators/usage.validator.js";
-import type { ApiResponse, ApiErrorResponse } from "../types/index.js";
+import type { ApiResponse } from "../types/index.js";
 import type { Usage } from "../types/db.js";
-import { requireAuth } from "../middleware/auth.middleware.js";
 import { triggerManualReset } from "../jobs/reset-usage.job.js";
-
-const router = Router();
+import { ValidationError } from "../utils/errors.js";
+import { successResponse } from "../utils/async-handler.js";
 
 /**
  * Usage list response type
  */
-interface UsageListResponse {
+export interface UsageListResponse {
   usage: Usage[];
   total: number;
 }
@@ -19,294 +23,144 @@ interface UsageListResponse {
 /**
  * Usage stats response type
  */
-interface UsageStatsResponse {
+export interface UsageStatsResponse {
   totalUsers: number;
   totalUsage: number;
   avgUsage: number;
 }
 
 // =============================================================================
-// USER USAGE ROUTES
+// USER USAGE CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/users/:userId/usage/:featureSlug
  * Record usage for a user and feature
  */
-router.post(
-  "/users/:userId/usage/:featureSlug",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<Usage> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId, featureSlug } = req.params;
-      const userIdNum = parseInt(userId ?? "", 10);
+export async function recordUsage(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<Usage>> {
+  const { userId, featureSlug } = req.params;
+  const trimmedUserId = userId?.trim();
 
-      if (isNaN(userIdNum) || !featureSlug) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid parameters" },
-        });
-        return;
-      }
-
-      const parsed = RecordUsageSchema.safeParse(req.body);
-      const amount = parsed.success ? parsed.data.amount : 1;
-
-      const usage = await usageService.recordUsage(
-        userIdNum,
-        featureSlug,
-        amount
-      );
-
-      res.status(200).json({
-        success: true,
-        data: usage,
-        message: `Usage recorded: +${amount}`,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to record usage";
-      res.status(500).json({
-        success: false,
-        error: { code: "RECORD_FAILED", message },
-      });
-    }
+  if (!trimmedUserId || !featureSlug) {
+    throw new ValidationError("Invalid parameters");
   }
-);
+
+  const parsed = RecordUsageSchema.safeParse(req.body);
+  const amount = parsed.success ? parsed.data.amount : 1;
+
+  const usage = await usageService.recordUsage(trimmedUserId, featureSlug, amount);
+
+  return successResponse(usage, `Usage recorded: +${amount}`).response;
+}
 
 /**
- * GET /admin/users/:userId/usage
  * Get all usage for a user
  */
-router.get(
-  "/users/:userId/usage",
-  async (
-    req: Request,
-    res: Response<ApiResponse<UsageListResponse> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId } = req.params;
-      const userIdNum = parseInt(userId ?? "", 10);
+export async function getUserUsage(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<UsageListResponse>> {
+  const { userId } = req.params;
+  const trimmedUserId = userId?.trim();
 
-      if (isNaN(userIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid user ID" },
-        });
-        return;
-      }
-
-      const usage = await usageService.getUserUsage(userIdNum);
-
-      res.status(200).json({
-        success: true,
-        data: { usage, total: usage.length },
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get usage";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_FAILED", message },
-      });
-    }
+  if (!trimmedUserId) {
+    throw new ValidationError("Invalid user ID");
   }
-);
+
+  const usage = await usageService.getUserUsage(trimmedUserId);
+
+  return successResponse({ usage, total: usage.length }).response;
+}
 
 /**
- * GET /admin/users/:userId/usage/:featureSlug
  * Get usage for a specific feature
  */
-router.get(
-  "/users/:userId/usage/:featureSlug",
-  async (
-    req: Request,
-    res: Response<ApiResponse<Usage | null> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId, featureSlug } = req.params;
-      const userIdNum = parseInt(userId ?? "", 10);
+export async function getUsage(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<Usage | null>> {
+  const { userId, featureSlug } = req.params;
+  const trimmedUserId = userId?.trim();
 
-      if (isNaN(userIdNum) || !featureSlug) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid parameters" },
-        });
-        return;
-      }
-
-      const usage = await usageService.getUsage(userIdNum, featureSlug);
-
-      res.status(200).json({
-        success: true,
-        data: usage,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get usage";
-      res.status(500).json({
-        success: false,
-        error: { code: "GET_FAILED", message },
-      });
-    }
+  if (!trimmedUserId || !featureSlug) {
+    throw new ValidationError("Invalid parameters");
   }
-);
+
+  const usage = await usageService.getUsage(trimmedUserId, featureSlug);
+
+  return successResponse(usage).response;
+}
 
 /**
- * POST /admin/users/:userId/usage/:featureSlug/reset
  * Reset usage for a specific feature
  */
-router.post(
-  "/users/:userId/usage/:featureSlug/reset",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ reset: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId, featureSlug } = req.params;
-      const userIdNum = parseInt(userId ?? "", 10);
+export async function resetUsage(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ reset: boolean }>> {
+  const { userId, featureSlug } = req.params;
+  const trimmedUserId = userId?.trim();
 
-      if (isNaN(userIdNum) || !featureSlug) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid parameters" },
-        });
-        return;
-      }
-
-      await usageService.resetUsage(userIdNum, featureSlug);
-
-      res.status(200).json({
-        success: true,
-        data: { reset: true },
-        message: "Usage reset successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to reset usage";
-      res.status(500).json({
-        success: false,
-        error: { code: "RESET_FAILED", message },
-      });
-    }
+  if (!trimmedUserId || !featureSlug) {
+    throw new ValidationError("Invalid parameters");
   }
-);
+
+  await usageService.resetUsage(trimmedUserId, featureSlug);
+
+  return successResponse({ reset: true }, "Usage reset successfully").response;
+}
 
 /**
- * POST /admin/users/:userId/usage/reset-all
  * Reset all usage for a user
  */
-router.post(
-  "/users/:userId/usage/reset-all",
-  requireAuth,
-  async (
-    req: Request,
-    res: Response<ApiResponse<{ reset: boolean }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { userId } = req.params;
-      const userIdNum = parseInt(userId ?? "", 10);
+export async function resetAllUsageForUser(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ reset: boolean }>> {
+  const { userId } = req.params;
+  const trimmedUserId = userId?.trim();
 
-      if (isNaN(userIdNum)) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Invalid user ID" },
-        });
-        return;
-      }
-
-      await usageService.resetAllUsageForUser(userIdNum);
-
-      res.status(200).json({
-        success: true,
-        data: { reset: true },
-        message: "All usage reset successfully",
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to reset usage";
-      res.status(500).json({
-        success: false,
-        error: { code: "RESET_FAILED", message },
-      });
-    }
+  if (!trimmedUserId) {
+    throw new ValidationError("Invalid user ID");
   }
-);
+
+  await usageService.resetAllUsageForUser(trimmedUserId);
+
+  return successResponse({ reset: true }, "All usage reset successfully").response;
+}
 
 // =============================================================================
-// ADMIN ROUTES
+// ADMIN CONTROLLERS
 // =============================================================================
 
 /**
- * POST /admin/usage/reset-all
  * Reset all monthly usage (admin only)
  */
-router.post(
-  "/usage/reset-all",
-  requireAuth,
-  async (
-    _req: Request,
-    res: Response<ApiResponse<{ count: number }> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const count = await triggerManualReset();
+export async function resetAllUsage(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<{ count: number }>> {
+  const count = await triggerManualReset();
 
-      res.status(200).json({
-        success: true,
-        data: { count },
-        message: `Reset ${count} usage records`,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to reset usage";
-      res.status(500).json({
-        success: false,
-        error: { code: "RESET_FAILED", message },
-      });
-    }
-  }
-);
+  return successResponse({ count }, `Reset ${count} usage records`).response;
+}
 
 /**
- * GET /admin/usage/stats/:featureSlug
  * Get usage statistics for a feature
  */
-router.get(
-  "/usage/stats/:featureSlug",
-  async (
-    req: Request,
-    res: Response<ApiResponse<UsageStatsResponse> | ApiErrorResponse>
-  ): Promise<void> => {
-    try {
-      const { featureSlug } = req.params;
+export async function getFeatureUsageStats(
+  req: Request,
+  res: Response
+): Promise<ApiResponse<UsageStatsResponse>> {
+  const { featureSlug } = req.params;
 
-      if (!featureSlug) {
-        res.status(400).json({
-          success: false,
-          error: { code: "VALIDATION_ERROR", message: "Feature slug required" },
-        });
-        return;
-      }
-
-      const stats = await usageService.getFeatureUsageStats(featureSlug);
-
-      res.status(200).json({
-        success: true,
-        data: stats,
-      });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Failed to get stats";
-      res.status(500).json({
-        success: false,
-        error: { code: "STATS_FAILED", message },
-      });
-    }
+  if (!featureSlug) {
+    throw new ValidationError("Feature slug required");
   }
-);
 
-export default router;
+  const stats = await usageService.getFeatureUsageStats(featureSlug);
+
+  return successResponse(stats).response;
+}

@@ -166,7 +166,7 @@ export interface RoleWithPermissions extends Role {
 
 /** User entitlements (computed) */
 export interface UserEntitlements {
-  userId: number;
+  userId: string;
   organizationId: number | null;
   features: {
     slug: string;

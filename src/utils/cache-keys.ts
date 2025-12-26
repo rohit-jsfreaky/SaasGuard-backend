@@ -11,7 +11,7 @@ const PREFIX = "saasguard";
  * @param organizationId - Organization ID (optional)
  */
 export function userPermissionsKey(
-  userId: number,
+  userId: string,
   organizationId?: number
 ): string {
   if (organizationId) {
@@ -25,7 +25,7 @@ export function userPermissionsKey(
  * @param userId - User ID
  * @param featureSlug - Optional feature slug for specific feature usage
  */
-export function userUsageKey(userId: number, featureSlug?: string): string {
+export function userUsageKey(userId: string, featureSlug?: string): string {
   if (featureSlug) {
     return `${PREFIX}:user:${userId}:usage:${featureSlug}`;
   }
@@ -37,7 +37,7 @@ export function userUsageKey(userId: number, featureSlug?: string): string {
  * @param userId - User ID
  * @param organizationId - Organization ID
  */
-export function userRolesKey(userId: number, organizationId: number): string {
+export function userRolesKey(userId: string, organizationId: number): string {
   return `${PREFIX}:user:${userId}:org:${organizationId}:roles`;
 }
 
@@ -45,7 +45,7 @@ export function userRolesKey(userId: number, organizationId: number): string {
  * Generate cache key for user overrides
  * @param userId - User ID
  */
-export function userOverridesKey(userId: number): string {
+export function userOverridesKey(userId: string): string {
   return `${PREFIX}:user:${userId}:overrides`;
 }
 
@@ -157,7 +157,7 @@ export function rolePermissionsKey(roleId: number): string {
  * @param userId - User ID
  * @param orgId - Organization ID
  */
-export function resolvedPermissionsKey(userId: number, orgId: number): string {
+export function resolvedPermissionsKey(userId: string, orgId: number): string {
   return `${PREFIX}:permissions:${userId}:${orgId}`;
 }
 
@@ -166,7 +166,7 @@ export function resolvedPermissionsKey(userId: number, orgId: number): string {
  */
 export const CachePatterns = {
   /** All user-related keys for a specific user */
-  userAll: (userId: number) => `${PREFIX}:user:${userId}:*`,
+  userAll: (userId: string) => `${PREFIX}:user:${userId}:*`,
 
   /** All organization-related keys */
   orgAll: (organizationId: number) => `${PREFIX}:org:${organizationId}:*`,

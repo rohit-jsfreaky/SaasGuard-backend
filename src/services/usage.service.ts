@@ -19,7 +19,7 @@ class UsageService {
    * @returns Updated usage record
    */
   async recordUsage(
-    userId: number,
+    userId: string,
     featureSlug: string,
     amount: number = 1
   ): Promise<Usage> {
@@ -87,7 +87,7 @@ class UsageService {
    * @param featureSlug - Feature slug
    * @returns Usage record or null
    */
-  async getUsage(userId: number, featureSlug: string): Promise<Usage | null> {
+  async getUsage(userId: string, featureSlug: string): Promise<Usage | null> {
     const result = await db
       .select()
       .from(usage)
@@ -103,7 +103,7 @@ class UsageService {
    * @param featureSlug - Feature slug
    * @returns Usage count (0 if no record)
    */
-  async getUsageCount(userId: number, featureSlug: string): Promise<number> {
+  async getUsageCount(userId: string, featureSlug: string): Promise<number> {
     const record = await this.getUsage(userId, featureSlug);
     return record?.currentUsage ?? 0;
   }
@@ -113,7 +113,7 @@ class UsageService {
    * @param userId - User ID
    * @returns List of usage records
    */
-  async getUserUsage(userId: number): Promise<Usage[]> {
+  async getUserUsage(userId: string): Promise<Usage[]> {
     // Try cache first
     const cacheKey = userUsageKey(userId);
     const cached = await cacheService.get<Usage[]>(cacheKey);
@@ -138,7 +138,7 @@ class UsageService {
    * @param userId - User ID
    * @returns Map of feature slug to usage count
    */
-  async getUserUsageMap(userId: number): Promise<Map<string, number>> {
+  async getUserUsageMap(userId: string): Promise<Map<string, number>> {
     const records = await this.getUserUsage(userId);
     const usageMap = new Map<string, number>();
 
@@ -154,7 +154,7 @@ class UsageService {
    * @param userId - User ID
    * @param featureSlug - Feature slug
    */
-  async resetUsage(userId: number, featureSlug: string): Promise<void> {
+  async resetUsage(userId: string, featureSlug: string): Promise<void> {
     await db
       .update(usage)
       .set({
@@ -177,7 +177,7 @@ class UsageService {
    * Reset all usage for a user
    * @param userId - User ID
    */
-  async resetAllUsageForUser(userId: number): Promise<void> {
+  async resetAllUsageForUser(userId: string): Promise<void> {
     await db
       .update(usage)
       .set({
@@ -201,9 +201,9 @@ class UsageService {
    * @returns Map of userId to usage count
    */
   async bulkGetUsage(
-    userIds: number[],
+    userIds: string[],
     featureSlug: string
-  ): Promise<Map<number, number>> {
+  ): Promise<Map<string, number>> {
     if (userIds.length === 0) {
       return new Map();
     }
@@ -218,7 +218,7 @@ class UsageService {
         and(inArray(usage.userId, userIds), eq(usage.featureSlug, featureSlug))
       );
 
-    const usageMap = new Map<number, number>();
+    const usageMap = new Map<string, number>();
 
     // Initialize all users with 0
     for (const userId of userIds) {
@@ -264,7 +264,7 @@ class UsageService {
    * @param userId - User ID
    * @param featureSlug - Feature slug
    */
-  async deleteUsage(userId: number, featureSlug: string): Promise<void> {
+  async deleteUsage(userId: string, featureSlug: string): Promise<void> {
     await db
       .delete(usage)
       .where(and(eq(usage.userId, userId), eq(usage.featureSlug, featureSlug)));
@@ -276,7 +276,7 @@ class UsageService {
    * Delete all usage for a user
    * @param userId - User ID
    */
-  async deleteAllUserUsage(userId: number): Promise<void> {
+  async deleteAllUserUsage(userId: string): Promise<void> {
     await db.delete(usage).where(eq(usage.userId, userId));
 
     await this.invalidateCache(userId);
@@ -312,7 +312,7 @@ class UsageService {
   /**
    * Invalidate cache for a user's usage
    */
-  private async invalidateCache(userId: number): Promise<void> {
+  private async invalidateCache(userId: string): Promise<void> {
     await cacheService.del(userUsageKey(userId));
   }
 }

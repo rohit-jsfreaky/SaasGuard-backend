@@ -42,7 +42,7 @@ class PermissionResolutionService {
    * @returns Resolved permission map
    */
   async resolvePermissions(
-    userId: number,
+    userId: string,
     orgId: number,
     planId?: number
   ): Promise<PermissionMap> {
@@ -113,7 +113,7 @@ class PermissionResolutionService {
    * @returns Permission context
    */
   private async buildContext(
-    userId: number,
+    userId: string,
     orgId: number,
     planId?: number
   ): Promise<PermissionContext> {
@@ -205,7 +205,7 @@ class PermissionResolutionService {
    * @returns Permission check result
    */
   async checkPermission(
-    userId: number,
+    userId: string,
     orgId: number,
     featureSlug: string,
     planId?: number
@@ -227,7 +227,7 @@ class PermissionResolutionService {
    * @returns Map of feature slug to allowed status
    */
   async checkMultiplePermissions(
-    userId: number,
+    userId: string,
     orgId: number,
     featureSlugs: string[],
     planId?: number
@@ -252,7 +252,7 @@ class PermissionResolutionService {
    * @param userId - User ID
    * @param orgId - Organization ID
    */
-  async invalidatePermissions(userId: number, orgId: number): Promise<void> {
+  async invalidatePermissions(userId: string, orgId: number): Promise<void> {
     await cacheService.del(resolvedPermissionsKey(userId, orgId));
 
     if (isDevelopment) {
@@ -266,7 +266,7 @@ class PermissionResolutionService {
    * Invalidate all cached permissions for a user (all orgs)
    * @param userId - User ID
    */
-  async invalidateAllUserPermissions(userId: number): Promise<void> {
+  async invalidateAllUserPermissions(userId: string): Promise<void> {
     await cacheService.clearPattern(`permissions:${userId}:*`);
 
     if (isDevelopment) {
@@ -286,7 +286,7 @@ class PermissionResolutionService {
    * @returns Whether feature is allowed
    */
   async isFeatureAllowed(
-    userId: number,
+    userId: string,
     orgId: number,
     featureSlug: string,
     planId?: number
@@ -304,7 +304,7 @@ class PermissionResolutionService {
    * @returns Whether user is within limits
    */
   async isWithinLimits(
-    userId: number,
+    userId: string,
     orgId: number,
     featureSlug: string,
     planId?: number
@@ -328,7 +328,7 @@ class PermissionResolutionService {
    * @returns Remaining usage or null if unlimited
    */
   async getRemainingUsage(
-    userId: number,
+    userId: string,
     orgId: number,
     featureSlug: string,
     planId?: number

@@ -13,6 +13,7 @@ import { limit as getLimit, can } from "../utils/permission-check.js";
 import type { ApiErrorResponse } from "../types/index.js";
 import type { PermissionMap } from "../types/permissions.js";
 import { isDevelopment } from "../config/environment.js";
+import { resolveOrganizationId } from "../utils/organization.js";
 
 /**
  * Extended request with permissions attached
@@ -39,12 +40,10 @@ export function enforceLimit(featureName: string, customLimit?: number) {
     next: NextFunction
   ): Promise<void> => {
     try {
-      const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-      const orgId = req.user?.organizationId
-        ? parseInt(req.user.organizationId, 10)
-        : null;
+      const userId = req.user?.userId ?? null;
+      const orgId = await resolveOrganizationId(req.user?.organizationId);
 
-      if (!userId || isNaN(userId)) {
+      if (!userId) {
         res.status(401).json({
           success: false,
           error: { code: "UNAUTHORIZED", message: "Authentication required" },
@@ -52,7 +51,7 @@ export function enforceLimit(featureName: string, customLimit?: number) {
         return;
       }
 
-      if (!orgId || isNaN(orgId)) {
+      if (!orgId) {
         res.status(400).json({
           success: false,
           error: {
@@ -167,9 +166,9 @@ export async function recordUsage(
   featureName: string,
   amount: number = 1
 ): Promise<void> {
-  const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+  const userId = req.user?.userId ?? null;
 
-  if (!userId || isNaN(userId)) {
+  if (!userId) {
     throw new Error("User ID required to record usage");
   }
 
@@ -200,12 +199,10 @@ export function authorizeAndLimit(featureName: string, planId?: number) {
     next: NextFunction
   ): Promise<void> => {
     try {
-      const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-      const orgId = req.user?.organizationId
-        ? parseInt(req.user.organizationId, 10)
-        : null;
+      const userId = req.user?.userId ?? null;
+      const orgId = await resolveOrganizationId(req.user?.organizationId);
 
-      if (!userId || isNaN(userId)) {
+      if (!userId) {
         res.status(401).json({
           success: false,
           error: { code: "UNAUTHORIZED", message: "Authentication required" },
@@ -213,7 +210,7 @@ export function authorizeAndLimit(featureName: string, planId?: number) {
         return;
       }
 
-      if (!orgId || isNaN(orgId)) {
+      if (!orgId) {
         res.status(400).json({
           success: false,
           error: {

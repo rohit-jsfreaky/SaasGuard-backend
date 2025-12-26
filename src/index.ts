@@ -15,13 +15,13 @@ import {
   errorHandler,
   notFoundHandler,
 } from "./middleware/error-handler.middleware.js";
-import featureRoutes from "./controllers/feature.controller.js";
-import planRoutes from "./controllers/plan.controller.js";
-import roleRoutes from "./controllers/role.controller.js";
-import overrideRoutes from "./controllers/override.controller.js";
-import usageRoutes from "./controllers/usage.controller.js";
-import permissionRoutes from "./controllers/permission.controller.js";
-import healthRoutes from "./controllers/health.controller.js";
+import featureRoutes from "./routes/feature.routes.js";
+import planRoutes from "./routes/plan.routes.js";
+import roleRoutes from "./routes/role.routes.js";
+import overrideRoutes from "./routes/override.routes.js";
+import usageRoutes from "./routes/usage.routes.js";
+import permissionRoutes from "./routes/permission.routes.js";
+import healthRoutes from "./routes/health.routes.js";
 import adminRoutes from "./routes/admin/index.js";
 import { swaggerSpec } from "./docs/swagger.js";
 import { registerShutdownHandlers } from "./utils/graceful-shutdown.js";

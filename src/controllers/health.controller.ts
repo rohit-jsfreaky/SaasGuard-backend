@@ -1,20 +1,18 @@
 /**
  * Health Check Controller
- * Provides endpoints for monitoring system health
+ * Pure controller functions for health checks
  */
 
-import { Router, type Request, type Response } from "express";
+import type { Request, Response } from "express";
 import { db } from "../db/index.js";
 import { cacheService } from "../services/cache.service.js";
 import { sql } from "drizzle-orm";
 import { logger } from "../config/logger.js";
 
-const router = Router();
-
 /**
  * Health status response
  */
-interface HealthStatus {
+export interface HealthStatus {
   status: "healthy" | "degraded" | "unhealthy";
   timestamp: string;
   version: string;
@@ -81,7 +79,10 @@ async function checkCache(): Promise<{
  * GET /health
  * Basic health check endpoint
  */
-router.get("/", async (_req: Request, res: Response<HealthStatus>) => {
+export async function getHealth(
+  req: Request,
+  res: Response<HealthStatus>
+): Promise<HealthStatus> {
   const dbCheck = await checkDatabase();
   const cacheCheck = await checkCache();
 
@@ -105,27 +106,26 @@ router.get("/", async (_req: Request, res: Response<HealthStatus>) => {
       : status.status === "degraded"
       ? 200
       : 503;
-  res.status(statusCode).json(status);
-});
+  res.status(statusCode);
+  return status;
+}
 
 /**
  * GET /health/live
  * Kubernetes liveness probe
- * Returns 200 if server is running
  */
-router.get("/live", (_req: Request, res: Response) => {
+export function getLiveness(req: Request, res: Response): void {
   res.status(200).json({
     status: "ok",
     timestamp: new Date().toISOString(),
   });
-});
+}
 
 /**
  * GET /health/ready
  * Kubernetes readiness probe
- * Returns 200 if server is ready to accept traffic
  */
-router.get("/ready", async (_req: Request, res: Response) => {
+export async function getReadiness(req: Request, res: Response): Promise<void> {
   const dbCheck = await checkDatabase();
 
   if (dbCheck.status === "ok") {
@@ -140,6 +140,4 @@ router.get("/ready", async (_req: Request, res: Response) => {
       error: "Database not available",
     });
   }
-});
-
-export default router;
+}

@@ -43,7 +43,7 @@ export interface PermissionMap {
   resolvedAt: Date;
 
   /** User ID these permissions are for */
-  userId: number;
+  userId: string;
 
   /** Organization ID context */
   orgId: number;
@@ -56,7 +56,7 @@ export interface PermissionMap {
  * Permission resolution context with all loaded data
  */
 export interface PermissionContext {
-  userId: number;
+  userId: string;
   orgId: number;
 
   /** Plan-based feature permissions (from plan_features) */
@@ -106,7 +106,7 @@ export interface PermissionCheckResult {
  * Bulk permission check request
  */
 export interface BulkPermissionRequest {
-  userId: number;
+  userId: string;
   orgId: number;
   featureSlugs: string[];
 }

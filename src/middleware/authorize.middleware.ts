@@ -11,6 +11,7 @@ import { permissionResolutionService } from "../services/permission-resolution.s
 import { checkReason } from "../utils/permission-check.js";
 import type { ApiErrorResponse } from "../types/index.js";
 import { isDevelopment } from "../config/environment.js";
+import { resolveOrganizationId } from "../utils/organization.js";
 
 /**
  * Authorization middleware factory
@@ -30,14 +31,10 @@ export function authorize(requiredFeature: string, planId?: number) {
     next: NextFunction
   ): Promise<void> => {
     try {
-      // Get user from auth middleware
-      const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-      const orgId = req.user?.organizationId
-        ? parseInt(req.user.organizationId, 10)
-        : null;
+      const userId = req.user?.userId ?? null;
+      const orgId = await resolveOrganizationId(req.user?.organizationId);
 
-      // Must have authenticated user
-      if (!userId || isNaN(userId)) {
+      if (!userId) {
         res.status(401).json({
           success: false,
           error: {
@@ -48,8 +45,7 @@ export function authorize(requiredFeature: string, planId?: number) {
         return;
       }
 
-      // Must have organization context
-      if (!orgId || isNaN(orgId)) {
+      if (!orgId) {
         res.status(400).json({
           success: false,
           error: {
@@ -149,12 +145,10 @@ export function authorizeAll(requiredFeatures: string[], planId?: number) {
     next: NextFunction
   ): Promise<void> => {
     try {
-      const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-      const orgId = req.user?.organizationId
-        ? parseInt(req.user.organizationId, 10)
-        : null;
+      const userId = req.user?.userId ?? null;
+      const orgId = await resolveOrganizationId(req.user?.organizationId);
 
-      if (!userId || isNaN(userId)) {
+      if (!userId) {
         res.status(401).json({
           success: false,
           error: { code: "UNAUTHORIZED", message: "Authentication required" },
@@ -162,7 +156,7 @@ export function authorizeAll(requiredFeatures: string[], planId?: number) {
         return;
       }
 
-      if (!orgId || isNaN(orgId)) {
+      if (!orgId) {
         res.status(400).json({
           success: false,
           error: {
@@ -233,12 +227,10 @@ export function authorizeAny(anyOfFeatures: string[], planId?: number) {
     next: NextFunction
   ): Promise<void> => {
     try {
-      const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-      const orgId = req.user?.organizationId
-        ? parseInt(req.user.organizationId, 10)
-        : null;
+      const userId = req.user?.userId ?? null;
+      const orgId = await resolveOrganizationId(req.user?.organizationId);
 
-      if (!userId || isNaN(userId)) {
+      if (!userId) {
         res.status(401).json({
           success: false,
           error: { code: "UNAUTHORIZED", message: "Authentication required" },
@@ -246,7 +238,7 @@ export function authorizeAny(anyOfFeatures: string[], planId?: number) {
         return;
       }
 
-      if (!orgId || isNaN(orgId)) {
+      if (!orgId) {
         res.status(400).json({
           success: false,
           error: {

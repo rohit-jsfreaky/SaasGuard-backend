@@ -23,12 +23,10 @@ export async function requireAdmin(
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
-    const orgId = req.user?.organizationId
-      ? parseInt(req.user.organizationId, 10)
-      : null;
+    const userId = req.user?.userId ?? null;
+    const orgId = req.user?.organizationId ?? null;
 
-    if (!userId || isNaN(userId)) {
+    if (!userId) {
       res.status(401).json({
         success: false,
         error: { code: "UNAUTHORIZED", message: "Authentication required" },
@@ -36,7 +34,7 @@ export async function requireAdmin(
       return;
     }
 
-    if (!orgId || isNaN(orgId)) {
+    if (!orgId) {
       res.status(400).json({
         success: false,
         error: {
@@ -101,11 +99,11 @@ export async function requireOrgAdmin(
   next: NextFunction
 ): Promise<void> {
   try {
-    const userId = req.user?.userId ? parseInt(req.user.userId, 10) : null;
+    const userId = req.user?.userId ?? null;
     const { orgId } = req.params;
     const targetOrgId = parseInt(orgId ?? "", 10);
 
-    if (!userId || isNaN(userId)) {
+    if (!userId) {
       res.status(401).json({
         success: false,
         error: { code: "UNAUTHORIZED", message: "Authentication required" },
@@ -174,7 +172,7 @@ export async function requireOrgAdmin(
  * @returns True if user has the role
  */
 export async function hasRole(
-  userId: number,
+  userId: number | string,
   orgId: number,
   roleSlug: string
 ): Promise<boolean> {
@@ -191,7 +189,7 @@ export async function hasRole(
  * @returns True if user is an admin
  */
 export async function isUserAdmin(
-  userId: number,
+  userId: number | string,
   orgId: number
 ): Promise<boolean> {
   const userRoles = await userRoleService.getUserRoles(userId, orgId);

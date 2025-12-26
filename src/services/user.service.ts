@@ -65,6 +65,7 @@ class UserService {
 
     // Create new user
     const newUser: NewUser = {
+      id: clerkId,
       clerkId,
       email,
       orgId,
@@ -89,7 +90,7 @@ class UserService {
    * @param userId - Internal user ID
    * @returns User or null if not found
    */
-  async getUserById(userId: number): Promise<User | null> {
+  async getUserById(userId: string): Promise<User | null> {
     const result = await db
       .select()
       .from(users)
@@ -167,7 +168,7 @@ class UserService {
    * @param updates - Partial user updates
    * @returns Updated user
    */
-  async updateUser(userId: number, updates: UserUpdate): Promise<User> {
+  async updateUser(userId: string, updates: UserUpdate): Promise<User> {
     const result = await db
       .update(users)
       .set({
@@ -193,7 +194,7 @@ class UserService {
    * Delete user by ID
    * @param userId - User ID
    */
-  async deleteUser(userId: number): Promise<void> {
+  async deleteUser(userId: string): Promise<void> {
     const result = await db
       .delete(users)
       .where(eq(users.id, userId))
@@ -213,7 +214,7 @@ class UserService {
    * @param userId - User ID
    * @returns True if user exists
    */
-  async userExists(userId: number): Promise<boolean> {
+  async userExists(userId: string): Promise<boolean> {
     const result = await db
       .select({ id: users.id })
       .from(users)

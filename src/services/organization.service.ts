@@ -23,7 +23,7 @@ export interface CreateOrganizationInput {
   name: string;
   slug: string;
   clerkOrgId?: string;
-  createdBy?: number;
+  createdBy?: string;
 }
 
 /**
@@ -187,7 +187,7 @@ class OrganizationService {
    * @param userId - User ID
    * @param orgId - Organization ID
    */
-  async addUserToOrganization(userId: number, orgId: number): Promise<void> {
+  async addUserToOrganization(userId: string, orgId: number): Promise<void> {
     // Verify organization exists
     const org = await this.getOrganization(orgId);
     if (!org) {
@@ -221,7 +221,7 @@ class OrganizationService {
    * @param orgId - Organization ID (for verification)
    */
   async removeUserFromOrganization(
-    userId: number,
+    userId: string,
     orgId: number
   ): Promise<void> {
     // Verify user is in this organization
@@ -325,7 +325,7 @@ class OrganizationService {
    */
   async createOrganizationWithAdmin(
     orgInput: CreateOrganizationInput,
-    adminUserId: number
+    adminUserId: string
   ): Promise<Organization> {
     // Use a transaction to ensure consistency
     const client = await pool.connect();

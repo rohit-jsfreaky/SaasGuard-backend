@@ -34,7 +34,7 @@ export const organizations = pgTable(
     name: varchar("name", { length: 255 }).notNull(),
     slug: varchar("slug", { length: 255 }).notNull(),
     clerkOrgId: varchar("clerk_org_id", { length: 255 }),
-    createdBy: bigint("created_by", { mode: "number" }),
+    createdBy: varchar("created_by", { length: 255 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -72,7 +72,7 @@ export const organizationsRelations = relations(
 export const users = pgTable(
   "users",
   {
-    id: bigserial("id", { mode: "number" }).primaryKey(),
+    id: varchar("id", { length: 255 }).primaryKey(),
     email: varchar("email", { length: 255 }).notNull(),
     clerkId: varchar("clerk_id", { length: 255 }).notNull(),
     orgId: bigint("org_id", { mode: "number" }).references(
@@ -334,7 +334,7 @@ export const userRoles = pgTable(
   "user_roles",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    userId: bigint("user_id", { mode: "number" })
+    userId: varchar("user_id", { length: 255 })
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     roleId: bigint("role_id", { mode: "number" })
@@ -386,14 +386,14 @@ export const overrides = pgTable(
   "overrides",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    userId: bigint("user_id", { mode: "number" })
+    userId: varchar("user_id", { length: 255 })
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     featureSlug: varchar("feature_slug", { length: 255 }).notNull(),
     overrideType: overrideTypeEnum("override_type").notNull(),
     value: varchar("value", { length: 255 }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
-    createdBy: bigint("created_by", { mode: "number" }).references(
+    createdBy: varchar("created_by", { length: 255 }).references(
       () => users.id,
       { onDelete: "set null" }
     ),
@@ -432,7 +432,7 @@ export const userPlans = pgTable(
   "user_plans",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    userId: bigint("user_id", { mode: "number" })
+    userId: varchar("user_id", { length: 255 })
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     planId: bigint("plan_id", { mode: "number" })
@@ -445,7 +445,7 @@ export const userPlans = pgTable(
     assignedAt: timestamp("assigned_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
-    assignedBy: bigint("assigned_by", { mode: "number" }).references(
+    assignedBy: varchar("assigned_by", { length: 255 }).references(
       () => users.id,
       { onDelete: "set null" }
     ),
@@ -494,7 +494,7 @@ export const organizationOverrides = pgTable(
     overrideType: overrideTypeEnum("override_type").notNull(),
     value: varchar("value", { length: 255 }),
     expiresAt: timestamp("expires_at", { withTimezone: true }),
-    createdBy: bigint("created_by", { mode: "number" }).references(
+    createdBy: varchar("created_by", { length: 255 }).references(
       () => users.id,
       { onDelete: "set null" }
     ),
@@ -535,7 +535,7 @@ export const usage = pgTable(
   "usage",
   {
     id: bigserial("id", { mode: "number" }).primaryKey(),
-    userId: bigint("user_id", { mode: "number" })
+    userId: varchar("user_id", { length: 255 })
       .notNull()
       .references(() => users.id, { onDelete: "cascade" }),
     featureSlug: varchar("feature_slug", { length: 255 }).notNull(),
