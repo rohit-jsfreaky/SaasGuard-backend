@@ -120,13 +120,24 @@ export const getUsersByOrganization = asyncHandler(async (req, res) => {
   const orgId = parseInt(req.params.orgId, 10);
   const limit = parseInt(req.query.limit || '50', 10);
   const offset = parseInt(req.query.offset || '0', 10);
+  const currentUserId = req.userId; // Clerk ID
 
   if (isNaN(orgId)) {
     throw new ValidationError('Invalid organization ID');
   }
 
-  // TODO: Check authorization - user must be in organization
-  // This will be implemented when organization membership is ready
+  // Get current user
+  const currentUser = await usersService.getUserByClerkId(currentUserId);
+  if (!currentUser) {
+    throw new NotFoundError('Current user not found');
+  }
+
+  // Check authorization: user must be in organization
+  const organizationsService = (await import('../services/organizations.service.js')).default;
+  const belongsToOrg = await organizationsService.userBelongsToOrganization(currentUser.id, orgId);
+  if (!belongsToOrg) {
+    throw new ForbiddenError('You do not have access to this organization');
+  }
 
   const result = await usersService.getUsersByOrganization(orgId, limit, offset);
 
