@@ -80,8 +80,101 @@ export function validate(schema, data) {
   }
 }
 
+/**
+ * Feature validation functions
+ */
+
+/**
+ * Validate feature name
+ * @param {string} name - Feature name to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateFeatureName(name) {
+  if (!name) {
+    return 'Feature name is required';
+  }
+
+  if (typeof name !== 'string') {
+    return 'Feature name must be a string';
+  }
+
+  if (name.trim().length === 0) {
+    return 'Feature name cannot be empty';
+  }
+
+  if (name.trim().length > 255) {
+    return 'Feature name cannot exceed 255 characters';
+  }
+
+  return null;
+}
+
+/**
+ * Validate feature slug
+ * @param {string} slug - Feature slug to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateFeatureSlug(slug) {
+  if (!slug) {
+    return 'Feature slug is required';
+  }
+
+  if (typeof slug !== 'string') {
+    return 'Feature slug must be a string';
+  }
+
+  if (slug.trim().length === 0) {
+    return 'Feature slug cannot be empty';
+  }
+
+  // Slug must be lowercase, alphanumeric, and can contain hyphens
+  const slugRegex = /^[a-z0-9-]+$/;
+  if (!slugRegex.test(slug)) {
+    return 'Slug must be lowercase, alphanumeric, and can contain hyphens only';
+  }
+
+  if (slug.length > 255) {
+    return 'Feature slug cannot exceed 255 characters';
+  }
+
+  // Cannot start or end with hyphen
+  if (slug.startsWith('-') || slug.endsWith('-')) {
+    return 'Slug cannot start or end with a hyphen';
+  }
+
+  // Cannot have consecutive hyphens
+  if (slug.includes('--')) {
+    return 'Slug cannot contain consecutive hyphens';
+  }
+
+  return null;
+}
+
+/**
+ * Generate slug from feature name
+ * Converts name to lowercase, replaces spaces with hyphens, removes special chars
+ * @param {string} name - Feature name to slugify
+ * @returns {string} Generated slug
+ */
+export function slugifyFeatureName(name) {
+  if (!name || typeof name !== 'string') {
+    return '';
+  }
+
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+}
+
 export default {
   schemas,
-  validate
+  validate,
+  validateFeatureName,
+  validateFeatureSlug,
+  slugifyFeatureName
 };
 
