@@ -1,0 +1,295 @@
+# SaaS Guard Backend - Cursor AI Rules
+
+## Project Overview
+This is a production-grade Node.js backend for SaaS Guard - a centralized permission and entitlement engine. The project uses Express.js, PostgreSQL, Drizzle ORM, Redis, and Clerk for authentication.
+
+## Core Principles
+
+### Language & Type System
+- **USE JAVASCRIPT ONLY** - No TypeScript. All files must be `.js` files.
+- Use ES6+ syntax: arrow functions, const/let, template literals, destructuring, async/await
+- Use ES modules (`import`/`export`) - the project uses `"type": "module"` in package.json
+
+### Project Structure
+- **NO `src/` FOLDER** - All files go in the root directory structure:
+  - `config/` - Configuration files (env.js, db.js)
+  - `utilities/` - Utility functions (logger, errors, validators, async-handler)
+  - `middlewares/` - Express middlewares (auth, error-handler, request-id, validate, admin-check)
+  - `routes/` - Route definitions
+  - `controllers/` - Route handlers/controllers
+  - `services/` - Business logic services
+  - `models/` - Data models (if needed)
+  - `db/` - Database schemas and migrations
+  - `constants/` - Application constants
+
+### File Naming Conventions
+- Use kebab-case for files: `error-handler.middleware.js`, `users.controller.js`
+- Use camelCase for variables and functions: `getUserById`, `createOrganization`
+- Use UPPER_SNAKE_CASE for constants: `HTTP_STATUS`, `CACHE_TTL`
+- Use PascalCase for classes: `AppError`, `UsersService`
+
+### Code Style
+
+#### Async/Await & Error Handling
+- **ALWAYS use asyncHandler wrapper** for all controller functions to avoid try-catch repetition
+- Example:
+  ```javascript
+  import asyncHandler from '../utilities/async-handler.js';
+  
+  export const getUsers = asyncHandler(async (req, res) => {
+    const users = await usersService.getAll();
+    res.json({ success: true, data: users });
+  });
+  ```
+- Never use try-catch in controllers - asyncHandler handles it automatically
+- Services can use try-catch for specific error handling needs
+
+#### Imports & Exports
+- Always use ES6 import/export syntax
+- Use named exports for utilities and constants
+- Use default exports for classes and main module exports
+- Example:
+  ```javascript
+  // utilities/errors.js
+  export class AppError extends Error {}
+  export class ValidationError extends AppError {}
+  
+  // services/users.service.js
+  class UsersService {}
+  export default UsersService;
+  ```
+
+#### Error Handling
+- Use custom error classes from `utilities/errors.js`
+- Always throw appropriate errors: `ValidationError`, `NotFoundError`, `UnauthorizedError`, `ForbiddenError`, `ConflictError`
+- Never expose sensitive information in error messages
+- Log errors with context using logger
+
+#### Logging
+- **NEVER use console.log()** - always use the logger from `utilities/logger.js`
+- Use appropriate log levels: `logger.debug()`, `logger.info()`, `logger.warn()`, `logger.error()`
+- Include context in logs: `logger.info({ userId, orgId }, 'User created')`
+- Never log sensitive data (passwords, tokens, API keys)
+
+### Authentication & Authorization
+
+#### Clerk Integration
+- **USE `@clerk/express` package** - This is the correct package for Express apps
+- Clerk user IDs are **STRINGS**, not integers - always treat them as strings
+- Use `clerkAuthMiddleware` from `middlewares/auth.middleware.js` for authentication
+- Use `requireAuthentication` or `authenticate` middleware for protected routes
+- Access user info via `req.user` or `req.userId` (both set by auth middleware)
+- `req.user.id` is a STRING (Clerk user ID)
+
+#### Authorization Checks
+- Always check authorization before operations
+- Use `requireAdmin` middleware for admin-only routes
+- Verify user belongs to organization before org-scoped operations
+- Return 403 Forbidden with clear error messages
+
+### Database & ORM
+
+#### Drizzle ORM
+- Use Drizzle ORM for all database operations
+- Define schemas in `db/schema.js`
+- Use transactions for multi-table operations
+- Always handle database errors gracefully
+
+#### Database Conventions
+- Use snake_case for database columns: `created_at`, `user_id`, `organization_id`
+- Use camelCase for JavaScript variables: `createdAt`, `userId`, `organizationId`
+- Include `created_at` and `updated_at` timestamps on all tables
+- Use BIGINT for IDs (future-proof)
+- Index frequently queried columns
+
+### Caching
+
+#### Redis Caching
+- Cache read-heavy operations
+- Invalidate cache on all writes
+- Use consistent TTLs:
+  - Permissions: 5 minutes
+  - Plan/Role data: 1 hour
+  - Feature list: 24 hours
+  - Usage: 5 minutes
+- Handle Redis failures gracefully (fallback to direct queries)
+- Use cache key utilities from `utilities/cache-keys.js`
+
+### API Design
+
+#### RESTful Endpoints
+- Use RESTful conventions: GET, POST, PUT, DELETE, PATCH
+- Use consistent response format:
+  ```javascript
+  // Success
+  res.json({ success: true, data: result });
+  
+  // Error (handled by error middleware)
+  throw new NotFoundError('User not found');
+  ```
+
+#### Response Format
+- Success responses: `{ success: true, data: {...} }`
+- Error responses: Handled by error middleware automatically
+- Include pagination for list endpoints: `{ data: [], total: 100, hasMore: true }`
+
+#### HTTP Status Codes
+- 200: OK (GET, PUT, PATCH)
+- 201: Created (POST)
+- 204: No Content (DELETE)
+- 400: Bad Request (validation errors)
+- 401: Unauthorized (authentication required)
+- 403: Forbidden (authorization failed)
+- 404: Not Found
+- 409: Conflict (duplicate resource)
+- 429: Too Many Requests (rate limit)
+- 500: Internal Server Error
+
+### Validation
+
+#### Input Validation
+- Always validate inputs using Zod schemas
+- Use `validate` middleware or `utilities/validators.js`
+- Return clear validation error messages
+- Validate: request body, query parameters, path parameters
+
+### Environment Variables
+
+#### Configuration
+- All config in `config/env.js`
+- Validate required env vars on startup
+- Never hardcode values - use environment variables
+- Use `.env.example` as template
+
+### Development
+
+#### Running the Server
+- Use `npm run dev` for development (uses nodemon)
+- **DO NOT run the server yourself** - just provide the command
+- Server entry point: `index.js` (in root, not src/)
+
+#### Dependencies
+- Use existing packages from package.json
+- Don't add unnecessary dependencies
+- Keep dependencies up to date
+
+### Security
+
+#### Best Practices
+- Never trust frontend permissions - always verify on backend
+- Validate all inputs
+- Use prepared statements (Drizzle handles this)
+- Never expose sensitive data in logs or responses
+- Use HTTPS in production
+- Sanitize user inputs
+
+### Performance
+
+#### Optimization
+- Use database indexes on frequently queried columns
+- Cache aggressively for read operations
+- Use batch operations where possible
+- Optimize database queries
+- Use connection pooling
+
+### Code Comments
+
+#### Documentation
+- Add JSDoc comments for all functions
+- Document complex logic
+- Include parameter and return types in comments
+- Example:
+  ```javascript
+  /**
+   * Get user by ID
+   * @param {string} userId - User ID (Clerk ID, which is a string)
+   * @returns {Promise<Object|null>} User object or null if not found
+   */
+  async getUserById(userId) {
+    // implementation
+  }
+  ```
+
+### Testing Considerations
+
+#### Testability
+- Write pure functions where possible
+- Make services testable (dependency injection)
+- Mock external dependencies in tests
+- Test error cases
+
+### Common Patterns
+
+#### Service Pattern
+```javascript
+// services/users.service.js
+class UsersService {
+  constructor(db, cache) {
+    this.db = db;
+    this.cache = cache;
+  }
+  
+  async getUserById(userId) {
+    // implementation
+  }
+}
+
+export default UsersService;
+```
+
+#### Controller Pattern
+```javascript
+// controllers/users.controller.js
+import asyncHandler from '../utilities/async-handler.js';
+import UsersService from '../services/users.service.js';
+
+const usersService = new UsersService(db, cache);
+
+export const getUsers = asyncHandler(async (req, res) => {
+  const users = await usersService.getAll();
+  res.json({ success: true, data: users });
+});
+```
+
+#### Route Pattern
+```javascript
+// routes/users.routes.js
+import express from 'express';
+import { authenticate } from '../middlewares/auth.middleware.js';
+import * as usersController from '../controllers/users.controller.js';
+
+const router = express.Router();
+
+router.get('/', authenticate, usersController.getUsers);
+
+export default router;
+```
+
+## Important Reminders
+
+1. **Clerk user IDs are STRINGS** - Never treat them as integers
+2. **Use asyncHandler** - Don't write try-catch in controllers
+3. **No src/ folder** - Everything in root directory structure
+4. **JavaScript only** - No TypeScript
+5. **Use logger** - Never console.log()
+6. **Validate inputs** - Always validate with Zod
+7. **Handle errors** - Use custom error classes
+8. **Cache properly** - Invalidate on writes
+9. **Check authorization** - On every protected route
+10. **Follow RESTful** - Use proper HTTP methods and status codes
+
+## When in Doubt
+
+- Check existing code patterns in the codebase
+- Follow the structure of similar files
+- Use asyncHandler for all controllers
+- Use custom error classes for errors
+- Log with context using logger
+- Validate inputs with Zod
+- Cache read operations, invalidate on writes
+- Check authorization before operations
+
+---
+
+**Remember: This is a production-grade backend. Code quality, error handling, security, and performance matter.**
+
