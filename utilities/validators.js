@@ -13,6 +13,55 @@ export const schemas = {
 };
 
 /**
+ * User validation functions
+ */
+
+/**
+ * Validate email format
+ * @param {string} email - Email to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateEmail(email) {
+  if (!email) {
+    return 'Email is required';
+  }
+
+  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  if (!emailRegex.test(email)) {
+    return 'Invalid email format';
+  }
+
+  return null;
+}
+
+/**
+ * Validate Clerk ID format
+ * @param {string} clerkId - Clerk ID to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateClerkId(clerkId) {
+  if (!clerkId) {
+    return 'Clerk ID is required';
+  }
+
+  if (typeof clerkId !== 'string') {
+    return 'Clerk ID must be a string';
+  }
+
+  if (clerkId.trim().length === 0) {
+    return 'Clerk ID cannot be empty';
+  }
+
+  // Clerk IDs typically start with 'user_' or are alphanumeric
+  // Basic validation - adjust based on your Clerk setup
+  if (clerkId.length < 10) {
+    return 'Invalid Clerk ID format';
+  }
+
+  return null;
+}
+
+/**
  * Validate data against a Zod schema
  * @param {z.ZodSchema} schema - Zod schema to validate against
  * @param {any} data - Data to validate

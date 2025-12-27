@@ -1,8 +1,27 @@
 import express from 'express';
+import { authenticate } from '../middlewares/auth.middleware.js';
+import * as usersController from '../controllers/users.controller.js';
 
 const router = express.Router();
 
-// Placeholder - will be implemented later
+/**
+ * User Management Routes
+ * All routes require authentication
+ */
+
+// POST /api/users/sync - Sync user from Clerk
+router.post('/sync', authenticate, usersController.syncUser);
+
+// GET /api/users/me - Get current user
+router.get('/me', authenticate, usersController.getCurrentUser);
+
+// GET /api/users/:userId - Get user by ID
+router.get('/:userId', authenticate, usersController.getUserById);
+
+// PUT /api/users/:userId - Update user
+router.put('/:userId', authenticate, usersController.updateUser);
+
+// DELETE /api/users/:userId - Delete user
+router.delete('/:userId', authenticate, usersController.deleteUser);
 
 export default router;
-

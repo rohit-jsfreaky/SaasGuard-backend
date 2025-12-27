@@ -60,6 +60,17 @@ app.use((req, res, next) => {
 // Global error handler (must be last)
 app.use(errorHandler);
 
+// Test database connection on startup
+import('./config/db.js').then(async ({ testConnection }) => {
+  const dbConnected = await testConnection();
+  if (!dbConnected) {
+    logger.warn('Database connection failed - server will start but database operations may fail');
+    logger.warn('Please check your DATABASE_URL and ensure PostgreSQL is running');
+  }
+}).catch((error) => {
+  logger.error({ error }, 'Failed to test database connection');
+});
+
 // Start server
 const server = app.listen(config.port, () => {
   logger.info({
