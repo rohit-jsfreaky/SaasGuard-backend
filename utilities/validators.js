@@ -1,15 +1,18 @@
-import { z } from 'zod';
-import { ValidationError } from './errors.js';
+import { z } from "zod";
+import { ValidationError } from "./errors.js";
 
 /**
  * Common validation schemas
  */
 export const schemas = {
-  uuid: z.string().uuid('Invalid UUID format'),
-  email: z.string().email('Invalid email format'),
-  nonEmptyString: z.string().min(1, 'String cannot be empty'),
-  positiveInteger: z.number().int().positive('Must be a positive integer'),
-  nonNegativeInteger: z.number().int().nonnegative('Must be a non-negative integer')
+  uuid: z.string().uuid("Invalid UUID format"),
+  email: z.string().email("Invalid email format"),
+  nonEmptyString: z.string().min(1, "String cannot be empty"),
+  positiveInteger: z.number().int().positive("Must be a positive integer"),
+  nonNegativeInteger: z
+    .number()
+    .int()
+    .nonnegative("Must be a non-negative integer"),
 };
 
 /**
@@ -23,12 +26,12 @@ export const schemas = {
  */
 export function validateEmail(email) {
   if (!email) {
-    return 'Email is required';
+    return "Email is required";
   }
 
   const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
   if (!emailRegex.test(email)) {
-    return 'Invalid email format';
+    return "Invalid email format";
   }
 
   return null;
@@ -41,21 +44,21 @@ export function validateEmail(email) {
  */
 export function validateClerkId(clerkId) {
   if (!clerkId) {
-    return 'Clerk ID is required';
+    return "Clerk ID is required";
   }
 
-  if (typeof clerkId !== 'string') {
-    return 'Clerk ID must be a string';
+  if (typeof clerkId !== "string") {
+    return "Clerk ID must be a string";
   }
 
   if (clerkId.trim().length === 0) {
-    return 'Clerk ID cannot be empty';
+    return "Clerk ID cannot be empty";
   }
 
   // Clerk IDs typically start with 'user_' or are alphanumeric
   // Basic validation - adjust based on your Clerk setup
   if (clerkId.length < 10) {
-    return 'Invalid Clerk ID format';
+    return "Invalid Clerk ID format";
   }
 
   return null;
@@ -73,8 +76,10 @@ export function validate(schema, data) {
     return schema.parse(data);
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const messages = error.errors.map(err => `${err.path.join('.')}: ${err.message}`);
-      throw new ValidationError(messages.join(', '));
+      const messages = error.errors.map(
+        (err) => `${err.path.join(".")}: ${err.message}`
+      );
+      throw new ValidationError(messages.join(", "));
     }
     throw error;
   }
@@ -91,19 +96,19 @@ export function validate(schema, data) {
  */
 export function validateFeatureName(name) {
   if (!name) {
-    return 'Feature name is required';
+    return "Feature name is required";
   }
 
-  if (typeof name !== 'string') {
-    return 'Feature name must be a string';
+  if (typeof name !== "string") {
+    return "Feature name must be a string";
   }
 
   if (name.trim().length === 0) {
-    return 'Feature name cannot be empty';
+    return "Feature name cannot be empty";
   }
 
   if (name.trim().length > 255) {
-    return 'Feature name cannot exceed 255 characters';
+    return "Feature name cannot exceed 255 characters";
   }
 
   return null;
@@ -116,35 +121,35 @@ export function validateFeatureName(name) {
  */
 export function validateFeatureSlug(slug) {
   if (!slug) {
-    return 'Feature slug is required';
+    return "Feature slug is required";
   }
 
-  if (typeof slug !== 'string') {
-    return 'Feature slug must be a string';
+  if (typeof slug !== "string") {
+    return "Feature slug must be a string";
   }
 
   if (slug.trim().length === 0) {
-    return 'Feature slug cannot be empty';
+    return "Feature slug cannot be empty";
   }
 
   // Slug must be lowercase, alphanumeric, and can contain hyphens
   const slugRegex = /^[a-z0-9-]+$/;
   if (!slugRegex.test(slug)) {
-    return 'Slug must be lowercase, alphanumeric, and can contain hyphens only';
+    return "Slug must be lowercase, alphanumeric, and can contain hyphens only";
   }
 
   if (slug.length > 255) {
-    return 'Feature slug cannot exceed 255 characters';
+    return "Feature slug cannot exceed 255 characters";
   }
 
   // Cannot start or end with hyphen
-  if (slug.startsWith('-') || slug.endsWith('-')) {
-    return 'Slug cannot start or end with a hyphen';
+  if (slug.startsWith("-") || slug.endsWith("-")) {
+    return "Slug cannot start or end with a hyphen";
   }
 
   // Cannot have consecutive hyphens
-  if (slug.includes('--')) {
-    return 'Slug cannot contain consecutive hyphens';
+  if (slug.includes("--")) {
+    return "Slug cannot contain consecutive hyphens";
   }
 
   return null;
@@ -157,17 +162,112 @@ export function validateFeatureSlug(slug) {
  * @returns {string} Generated slug
  */
 export function slugifyFeatureName(name) {
-  if (!name || typeof name !== 'string') {
-    return '';
+  if (!name || typeof name !== "string") {
+    return "";
   }
 
   return name
     .toLowerCase()
     .trim()
-    .replace(/[^\w\s-]/g, '') // Remove special characters
-    .replace(/\s+/g, '-') // Replace spaces with hyphens
-    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
-    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+    .replace(/[^\w\s-]/g, "") // Remove special characters
+    .replace(/\s+/g, "-") // Replace spaces with hyphens
+    .replace(/-+/g, "-") // Replace multiple hyphens with single hyphen
+    .replace(/^-+|-+$/g, ""); // Remove leading/trailing hyphens
+}
+
+/**
+ * Plan validation functions
+ */
+
+/**
+ * Validate plan name
+ * @param {string} name - Plan name to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validatePlanName(name) {
+  if (!name) {
+    return "Plan name is required";
+  }
+
+  if (typeof name !== "string") {
+    return "Plan name must be a string";
+  }
+
+  if (name.trim().length === 0) {
+    return "Plan name cannot be empty";
+  }
+
+  if (name.trim().length > 255) {
+    return "Plan name cannot exceed 255 characters";
+  }
+
+  return null;
+}
+
+/**
+ * Validate plan slug
+ * @param {string} slug - Plan slug to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validatePlanSlug(slug) {
+  if (!slug) {
+    return "Plan slug is required";
+  }
+
+  if (typeof slug !== "string") {
+    return "Plan slug must be a string";
+  }
+
+  if (slug.trim().length === 0) {
+    return "Plan slug cannot be empty";
+  }
+
+  // Slug must be lowercase, alphanumeric, and can contain hyphens
+  const slugRegex = /^[a-z0-9-]+$/;
+  if (!slugRegex.test(slug)) {
+    return "Slug must be lowercase, alphanumeric, and can contain hyphens only";
+  }
+
+  if (slug.length > 255) {
+    return "Plan slug cannot exceed 255 characters";
+  }
+
+  // Cannot start or end with hyphen
+  if (slug.startsWith("-") || slug.endsWith("-")) {
+    return "Slug cannot start or end with a hyphen";
+  }
+
+  // Cannot have consecutive hyphens
+  if (slug.includes("--")) {
+    return "Slug cannot contain consecutive hyphens";
+  }
+
+  return null;
+}
+
+/**
+ * Validate limit value
+ * @param {number} limit - Limit value to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateLimit(limit) {
+  if (limit === null || limit === undefined) {
+    return null; // Null is valid (means unlimited)
+  }
+
+  if (typeof limit !== "number") {
+    return "Limit must be a number";
+  }
+
+  if (!Number.isInteger(limit)) {
+    return "Limit must be an integer";
+  }
+
+  if (limit < 0) {
+    return "Limit must be non-negative";
+  }
+
+  return null;
 }
 
 export default {
@@ -175,6 +275,8 @@ export default {
   validate,
   validateFeatureName,
   validateFeatureSlug,
-  slugifyFeatureName
+  slugifyFeatureName,
+  validatePlanName,
+  validatePlanSlug,
+  validateLimit,
 };
-

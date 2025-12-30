@@ -2,6 +2,7 @@ import { clerkMiddleware, requireAuth, getAuth } from '@clerk/express';
 import { UnauthorizedError } from '../utilities/errors.js';
 import logger from '../utilities/logger.js';
 import clerkService from '../services/clerk.service.js';
+import config from '../config/env.js';
 
 /**
  * Clerk authentication middleware (base)
@@ -9,8 +10,20 @@ import clerkService from '../services/clerk.service.js';
  * Clerk user IDs are STRINGS, not integers
  * This middleware must be applied globally before routes
  * It automatically verifies tokens and attaches req.auth
+ * 
+ * Configured to:
+ * - Read tokens from Authorization header (Bearer token)
+ * - Handle token verification automatically
+ * - Set auth state on req.auth for use with getAuth()
  */
-export const clerkAuthMiddleware = clerkMiddleware();
+export const clerkAuthMiddleware = clerkMiddleware({
+  // Clerk will automatically read from Authorization header
+  // Format: Authorization: Bearer <token>
+  secretKey: config.clerk.secretKey,
+  // Allow unauthenticated requests to pass through
+  // Individual routes will use authenticate() middleware to require auth
+  publishableKey: process.env.CLERK_PUBLISHABLE_KEY || undefined
+});
 
 /**
  * Require authentication middleware (from @clerk/express)
@@ -40,9 +53,24 @@ export const authenticate = async (req, res, next) => {
     // Get auth state from request (set by clerkMiddleware)
     const auth = getAuth(req);
 
+    // Log auth state for debugging (only in development)
+    if (config.env === 'development') {
+      logger.debug({ 
+        hasAuth: !!auth, 
+        userId: auth?.userId,
+        sessionId: auth?.sessionId,
+        url: req.url,
+        authHeader: req.headers.authorization ? 'present' : 'missing'
+      }, 'Auth state check');
+    }
+
     // Check if user is authenticated
-    if (!auth.userId) {
-      logger.debug({ url: req.url }, 'No userId found - user not authenticated');
+    if (!auth || !auth.userId) {
+      logger.warn({ 
+        url: req.url,
+        hasAuth: !!auth,
+        authHeader: req.headers.authorization ? 'present' : 'missing'
+      }, 'No userId found - user not authenticated');
       throw new UnauthorizedError('Authentication required');
     }
 
@@ -64,9 +92,11 @@ export const authenticate = async (req, res, next) => {
     next();
   } catch (error) {
     logger.warn({ 
-      error: error.message, 
+      error: error.message,
+      errorStack: error.stack,
       url: req.url,
-      ip: req.ip 
+      ip: req.ip,
+      authHeader: req.headers.authorization ? 'present' : 'missing'
     }, 'Authentication failed');
     
     if (error instanceof UnauthorizedError) {
