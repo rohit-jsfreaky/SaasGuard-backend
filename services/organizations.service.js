@@ -364,6 +364,7 @@ class OrganizationsService {
 
   /**
    * Get all organizations user belongs to
+   * Returns all organizations where user is the creator (created_by)
    * @param {number} userId - User ID (database ID)
    * @returns {Promise<Array>} Array of organization objects
    */
@@ -373,24 +374,23 @@ class OrganizationsService {
     }
 
     try {
-      // Get user's current organization
+      // Verify user exists
       const user = await usersService.getUserById(userId);
       if (!user) {
         throw new NotFoundError('User not found');
       }
 
-      const orgs = [];
+      // Get all organizations created by this user
+      const orgList = await db
+        .select()
+        .from(organizations)
+        .where(eq(organizations.createdBy, userId))
+        .orderBy(desc(organizations.createdAt));
 
-      // If user has an organization, get it
-      if (user.organizationId) {
-        const org = await this.getOrganization(user.organizationId);
-        if (org) {
-          orgs.push(org);
-        }
-      }
+      // Format organizations
+      const orgs = orgList.map(org => this._formatOrganization(org));
 
-      // TODO: Support multiple organizations per user (future expansion)
-      // For now, users belong to one organization
+      logger.debug({ userId, orgCount: orgs.length }, 'Retrieved user organizations');
 
       return orgs;
     } catch (error) {
@@ -401,12 +401,25 @@ class OrganizationsService {
 
   /**
    * Check if user belongs to organization
+   * User belongs to org if they created it OR if their organizationId matches
    * @param {number} userId - User ID (database ID)
    * @param {number} orgId - Organization ID
    * @returns {Promise<boolean>}
    */
   async userBelongsToOrganization(userId, orgId) {
     try {
+      // Check if user created this organization
+      const [org] = await db
+        .select()
+        .from(organizations)
+        .where(eq(organizations.id, orgId))
+        .limit(1);
+
+      if (org && org.createdBy === userId) {
+        return true;
+      }
+
+      // Also check if user's organizationId matches (for backwards compatibility)
       const user = await usersService.getUserById(userId);
       return user?.organizationId === orgId;
     } catch (error) {
