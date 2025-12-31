@@ -5,6 +5,7 @@ import usersRoutes from "./users.routes.js";
 import organizationsRoutes from "./organizations.routes.js";
 import featuresRoutes from "./features.routes.js";
 import plansRoutes from "./plans.routes.js";
+import rolesRoutes from "./roles.routes.js";
 
 const router = express.Router();
 
@@ -20,9 +21,9 @@ router.use("/organizations", organizationsRoutes);
 // Note: Frontend should call /api/admin/features (the /api prefix comes from how you mount this router)
 router.use("/admin/features", featuresRoutes);
 router.use("/admin", plansRoutes); // Plans routes are under /api/admin
+router.use("/admin", rolesRoutes); // Roles routes are under /api/admin
 
 // Placeholder routes - will be implemented in later features
-// router.use('/admin/roles', rolesRoutes);
 // router.use('/admin/overrides', overridesRoutes);
 // router.use('/admin/usage', usageRoutes);
 // router.use('/permissions', permissionsRoutes);

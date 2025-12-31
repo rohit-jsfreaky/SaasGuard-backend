@@ -221,8 +221,25 @@ class PlansService {
         .limit(limit)
         .offset(offset);
 
+      // Get features count for each plan
+      const plansWithCounts = await Promise.all(
+        planList.map(async (plan) => {
+          const featuresCount = await db
+            .select({ count: sql`count(*)` })
+            .from(planFeatures)
+            .where(eq(planFeatures.planId, plan.id));
+
+          const count = parseInt(featuresCount[0]?.count || 0, 10);
+          
+          return {
+            ...this._formatPlan(plan),
+            featuresCount: count
+          };
+        })
+      );
+
       const result = {
-        plans: planList.map((p) => this._formatPlan(p)),
+        plans: plansWithCounts,
         total,
         hasMore: offset + limit < total,
       };

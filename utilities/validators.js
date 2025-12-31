@@ -270,6 +270,97 @@ export function validateLimit(limit) {
   return null;
 }
 
+/**
+ * Role validation functions
+ */
+
+/**
+ * Validate role name
+ * @param {string} name - Role name to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateRoleName(name) {
+  if (!name) {
+    return 'Role name is required';
+  }
+
+  if (typeof name !== 'string') {
+    return 'Role name must be a string';
+  }
+
+  if (name.trim().length === 0) {
+    return 'Role name cannot be empty';
+  }
+
+  if (name.trim().length > 255) {
+    return 'Role name cannot exceed 255 characters';
+  }
+
+  return null;
+}
+
+/**
+ * Validate role slug
+ * @param {string} slug - Role slug to validate
+ * @param {number} orgId - Organization ID (optional, for uniqueness check)
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateRoleSlug(slug) {
+  if (!slug) {
+    return 'Role slug is required';
+  }
+
+  if (typeof slug !== 'string') {
+    return 'Role slug must be a string';
+  }
+
+  if (slug.trim().length === 0) {
+    return 'Role slug cannot be empty';
+  }
+
+  // Slug must be lowercase, alphanumeric, and can contain hyphens
+  const slugRegex = /^[a-z0-9-]+$/;
+  if (!slugRegex.test(slug)) {
+    return 'Slug must be lowercase, alphanumeric, and can contain hyphens only';
+  }
+
+  if (slug.length > 255) {
+    return 'Role slug cannot exceed 255 characters';
+  }
+
+  // Cannot start or end with hyphen
+  if (slug.startsWith('-') || slug.endsWith('-')) {
+    return 'Slug cannot start or end with a hyphen';
+  }
+
+  // Cannot have consecutive hyphens
+  if (slug.includes('--')) {
+    return 'Slug cannot contain consecutive hyphens';
+  }
+
+  return null;
+}
+
+/**
+ * Generate slug from role name
+ * Converts name to lowercase, replaces spaces with hyphens, removes special chars
+ * @param {string} name - Role name to slugify
+ * @returns {string} Generated slug
+ */
+export function slugifyRoleName(name) {
+  if (!name || typeof name !== 'string') {
+    return '';
+  }
+
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^\w\s-]/g, '') // Remove special characters
+    .replace(/\s+/g, '-') // Replace spaces with hyphens
+    .replace(/-+/g, '-') // Replace multiple hyphens with single hyphen
+    .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
+}
+
 export default {
   schemas,
   validate,
@@ -279,4 +370,7 @@ export default {
   validatePlanName,
   validatePlanSlug,
   validateLimit,
+  validateRoleName,
+  validateRoleSlug,
+  slugifyRoleName,
 };
