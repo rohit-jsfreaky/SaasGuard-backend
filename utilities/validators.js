@@ -361,6 +361,87 @@ export function slugifyRoleName(name) {
     .replace(/^-+|-+$/g, ''); // Remove leading/trailing hyphens
 }
 
+/**
+ * Override validation functions
+ */
+
+/**
+ * Validate override type
+ * @param {string} type - Override type to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateOverrideType(type) {
+  if (!type) {
+    return 'Override type is required';
+  }
+
+  const validTypes = ['feature_enable', 'feature_disable', 'limit_increase'];
+  if (!validTypes.includes(type)) {
+    return `Invalid override type. Must be one of: ${validTypes.join(', ')}`;
+  }
+
+  return null;
+}
+
+/**
+ * Validate override value based on type
+ * @param {string} type - Override type
+ * @param {any} value - Value to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateOverrideValue(type, value) {
+  if (type === 'limit_increase') {
+    if (value === null || value === undefined) {
+      return 'Value is required for limit_increase override';
+    }
+
+    if (typeof value !== 'number') {
+      return 'Value must be a number for limit_increase override';
+    }
+
+    if (!Number.isInteger(value)) {
+      return 'Value must be an integer for limit_increase override';
+    }
+
+    if (value <= 0) {
+      return 'Value must be positive for limit_increase override';
+    }
+
+    return null;
+  }
+
+  // For feature_enable and feature_disable, value should be null
+  if (value !== null && value !== undefined) {
+    return 'Value must be null for feature enable/disable overrides';
+  }
+
+  return null;
+}
+
+/**
+ * Validate expiration date
+ * @param {string|Date} date - Expiration date to validate
+ * @returns {string|null} Error message or null if valid
+ */
+export function validateExpirationDate(date) {
+  if (!date) {
+    return null; // null is valid (permanent override)
+  }
+
+  const expirationDate = date instanceof Date ? date : new Date(date);
+
+  if (isNaN(expirationDate.getTime())) {
+    return 'Invalid expiration date format';
+  }
+
+  // Check if date is in the past
+  if (expirationDate < new Date()) {
+    return 'Expiration date cannot be in the past';
+  }
+
+  return null;
+}
+
 export default {
   schemas,
   validate,
@@ -373,4 +454,7 @@ export default {
   validateRoleName,
   validateRoleSlug,
   slugifyRoleName,
+  validateOverrideType,
+  validateOverrideValue,
+  validateExpirationDate,
 };
