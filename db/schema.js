@@ -14,5 +14,6 @@ export { planLimits } from '../models/plan-limits.model.js';
 export { roles } from '../models/roles.model.js';
 export { rolePermissions } from '../models/role-permissions.model.js';
 export { userRoles } from '../models/user-roles.model.js';
+export { userPlans } from '../models/user-plans.model.js';
 export { overrides } from '../models/overrides.model.js';
 export { usage } from '../models/usage.model.js';
