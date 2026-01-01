@@ -3,6 +3,7 @@ import { authenticate } from '../middlewares/auth.middleware.js';
 import { orgCheck } from '../middlewares/org-check.middleware.js';
 import * as organizationsController from '../controllers/organizations.controller.js';
 import * as usersController from '../controllers/users.controller.js';
+import * as dashboardController from '../controllers/dashboard.controller.js';
 
 const router = express.Router();
 
