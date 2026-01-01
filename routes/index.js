@@ -9,6 +9,7 @@ import rolesRoutes from "./roles.routes.js";
 import overridesRoutes from "./overrides.routes.js";
 import userPlansRoutes from "./user-plans.routes.js";
 import permissionsRoutes from "./permissions.routes.js";
+import usageRoutes from "./usage.routes.js";
 
 const router = express.Router();
 
@@ -27,11 +28,9 @@ router.use("/admin", plansRoutes); // Plans routes are under /api/admin
 router.use("/admin", rolesRoutes); // Roles routes are under /api/admin
 router.use("/admin", overridesRoutes); // Overrides routes are under /api/admin (organization routes) and /api/admin/overrides (user routes)
 router.use("/admin", userPlansRoutes); // User plans routes are under /api/admin
+router.use("/admin", usageRoutes); // Usage routes are under /api/admin
 
 // Permissions routes (authentication required)
 router.use("/", permissionsRoutes); // Permissions routes are under /api/users/:userId/permissions and /api/me/permissions
-
-// Placeholder routes - will be implemented in later features
-// router.use('/admin/usage', usageRoutes);
 
 export default router;

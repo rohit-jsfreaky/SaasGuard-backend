@@ -122,11 +122,9 @@ class PermissionResolutionService {
       });
 
       // Step 10: Load usage for all features with limits
-      // Note: Usage service will be implemented in Feature 8.1
-      // For now, we'll return usage as 0
       const usageMap = {};
       try {
-        // Try to import usage service dynamically
+        // Import usage service
         const usageServiceModule = await import('./usage.service.js');
         const usageService = usageServiceModule.default;
         
@@ -148,7 +146,7 @@ class PermissionResolutionService {
           });
         }
       } catch (error) {
-        // Usage service not available yet - default to 0
+        // Usage service not available - default to 0
         logger.debug('Usage service not available, defaulting usage to 0');
         Object.keys(finalLimits).forEach(featureSlug => {
           usageMap[featureSlug] = 0;
