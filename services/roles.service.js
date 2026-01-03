@@ -1,13 +1,17 @@
-import { eq, and, desc, sql } from 'drizzle-orm';
-import db from '../config/db.js';
-import { roles } from '../models/roles.model.js';
-import { userRoles } from '../models/user-roles.model.js';
-import { rolePermissions } from '../models/role-permissions.model.js';
-import logger from '../utilities/logger.js';
-import { NotFoundError, ValidationError, ConflictError } from '../utilities/errors.js';
-import cacheService from './cache.service.js';
-import cacheKeys from '../utilities/cache-keys.js';
-import { CACHE_TTL } from '../utilities/cache-keys.js';
+import { eq, and, desc, sql } from "drizzle-orm";
+import db from "../config/db.js";
+import { roles } from "../models/roles.model.js";
+import { userRoles } from "../models/user-roles.model.js";
+import { rolePermissions } from "../models/role-permissions.model.js";
+import logger from "../utilities/logger.js";
+import {
+  NotFoundError,
+  ValidationError,
+  ConflictError,
+} from "../utilities/errors.js";
+import cacheService from "./cache.service.js";
+import cacheKeys from "../utilities/cache-keys.js";
+import { CACHE_TTL } from "../utilities/cache-keys.js";
 
 /**
  * RolesService - Handles all role-related database operations
@@ -24,27 +28,31 @@ class RolesService {
    */
   async createRole(organizationId, name, slug, description = null) {
     if (!organizationId) {
-      throw new ValidationError('Organization ID is required');
+      throw new ValidationError("Organization ID is required");
     }
 
     if (!name || name.trim().length === 0) {
-      throw new ValidationError('Role name is required');
+      throw new ValidationError("Role name is required");
     }
 
     if (!slug || slug.trim().length === 0) {
-      throw new ValidationError('Role slug is required');
+      throw new ValidationError("Role slug is required");
     }
 
     // Validate slug format: lowercase, alphanumeric, hyphens
     const slugRegex = /^[a-z0-9-]+$/;
     if (!slugRegex.test(slug)) {
-      throw new ValidationError('Slug must be lowercase, alphanumeric, and can contain hyphens');
+      throw new ValidationError(
+        "Slug must be lowercase, alphanumeric, and can contain hyphens"
+      );
     }
 
     // Check if slug already exists in organization
     const existing = await this.roleExistsBySlug(organizationId, slug);
     if (existing) {
-      throw new ConflictError(`Role with slug '${slug}' already exists in this organization`);
+      throw new ConflictError(
+        `Role with slug '${slug}' already exists in this organization`
+      );
     }
 
     try {
@@ -54,17 +62,20 @@ class RolesService {
           name: name.trim(),
           slug: slug.trim().toLowerCase(),
           description: description ? description.trim() : null,
-          organizationId
+          organizationId,
         })
         .returning();
 
-      logger.info({ roleId: newRole.id, organizationId, slug }, 'Role created');
+      logger.info({ roleId: newRole.id, organizationId, slug }, "Role created");
 
       return this._formatRole(newRole);
     } catch (error) {
-      logger.error({ error, organizationId, slug }, 'Failed to create role');
-      if (error.code === '23505') { // Unique constraint violation
-        throw new ConflictError(`Role with slug '${slug}' already exists in this organization`);
+      logger.error({ error, organizationId, slug }, "Failed to create role");
+      if (error.code === "23505") {
+        // Unique constraint violation
+        throw new ConflictError(
+          `Role with slug '${slug}' already exists in this organization`
+        );
       }
       throw error;
     }
@@ -77,7 +88,7 @@ class RolesService {
    */
   async getRole(roleId) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     const cacheKey = cacheKeys.role(roleId);
@@ -86,7 +97,7 @@ class RolesService {
       // Try cache first
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug({ roleId }, 'Role retrieved from cache');
+        logger.debug({ roleId }, "Role retrieved from cache");
         return cached;
       }
 
@@ -107,7 +118,7 @@ class RolesService {
 
       return formatted;
     } catch (error) {
-      logger.error({ error, roleId }, 'Failed to get role');
+      logger.error({ error, roleId }, "Failed to get role");
       throw error;
     }
   }
@@ -121,7 +132,7 @@ class RolesService {
    */
   async getRolesByOrganization(orgId, limit = 50, offset = 0) {
     if (!orgId) {
-      throw new ValidationError('Organization ID is required');
+      throw new ValidationError("Organization ID is required");
     }
 
     try {
@@ -156,10 +167,10 @@ class RolesService {
             );
 
           const count = parseInt(permissionsCount[0]?.count || 0, 10);
-          
+
           return {
             ...this._formatRole(role),
-            permissionsCount: count
+            permissionsCount: count,
           };
         })
       );
@@ -169,10 +180,10 @@ class RolesService {
         total,
         limit,
         offset,
-        hasMore: offset + limit < total
+        hasMore: offset + limit < total,
       };
     } catch (error) {
-      logger.error({ error, orgId }, 'Failed to get roles by organization');
+      logger.error({ error, orgId }, "Failed to get roles by organization");
       throw error;
     }
   }
@@ -186,34 +197,36 @@ class RolesService {
    */
   async updateRole(roleId, updates) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     // Check if role exists
     const existing = await this.getRole(roleId);
     if (!existing) {
-      throw new NotFoundError('Role not found');
+      throw new NotFoundError("Role not found");
     }
 
     // Build update object
     const updateData = {
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     if (updates.name !== undefined) {
       if (!updates.name || updates.name.trim().length === 0) {
-        throw new ValidationError('Role name cannot be empty');
+        throw new ValidationError("Role name cannot be empty");
       }
       updateData.name = updates.name.trim();
     }
 
     if (updates.description !== undefined) {
-      updateData.description = updates.description ? updates.description.trim() : null;
+      updateData.description = updates.description
+        ? updates.description.trim()
+        : null;
     }
 
     // Don't allow slug updates
     if (updates.slug !== undefined) {
-      throw new ValidationError('Role slug is immutable');
+      throw new ValidationError("Role slug is immutable");
     }
 
     try {
@@ -227,11 +240,11 @@ class RolesService {
       await cacheService.del(cacheKeys.role(roleId));
       await cacheService.del(cacheKeys.rolePermissions(roleId));
 
-      logger.info({ roleId }, 'Role updated');
+      logger.info({ roleId }, "Role updated");
 
       return this._formatRole(updated);
     } catch (error) {
-      logger.error({ error, roleId }, 'Failed to update role');
+      logger.error({ error, roleId }, "Failed to update role");
       throw error;
     }
   }
@@ -244,13 +257,13 @@ class RolesService {
    */
   async deleteRole(roleId) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     // Check if role exists
     const role = await this.getRole(roleId);
     if (!role) {
-      throw new NotFoundError('Role not found');
+      throw new NotFoundError("Role not found");
     }
 
     // Check if users are assigned this role
@@ -261,21 +274,21 @@ class RolesService {
       .limit(1);
 
     if (usersWithRole.length > 0) {
-      throw new ConflictError('Cannot delete role that is assigned to users. Remove all assignments first.');
+      throw new ConflictError(
+        "Cannot delete role that is assigned to users. Remove all assignments first."
+      );
     }
 
     try {
-      await db
-        .delete(roles)
-        .where(eq(roles.id, roleId));
+      await db.delete(roles).where(eq(roles.id, roleId));
 
       // Invalidate cache
       await cacheService.del(cacheKeys.role(roleId));
       await cacheService.del(cacheKeys.rolePermissions(roleId));
 
-      logger.info({ roleId }, 'Role deleted');
+      logger.info({ roleId }, "Role deleted");
     } catch (error) {
-      logger.error({ error, roleId }, 'Failed to delete role');
+      logger.error({ error, roleId }, "Failed to delete role");
       throw error;
     }
   }
@@ -288,17 +301,52 @@ class RolesService {
   async getRoleWithPermissions(roleId) {
     const role = await this.getRole(roleId);
     if (!role) {
-      throw new NotFoundError('Role not found');
+      throw new NotFoundError("Role not found");
     }
 
     // Import here to avoid circular dependency
-    const rolePermissionsService = (await import('./role-permissions.service.js')).default;
+    const rolePermissionsService = (
+      await import("./role-permissions.service.js")
+    ).default;
     const permissions = await rolePermissionsService.getRolePermissions(roleId);
 
     return {
       ...role,
-      permissions
+      permissions,
     };
+  }
+
+  /**
+   * Get role by slug in organization
+   * @param {string} slug - Role slug
+   * @param {number} organizationId - Organization ID
+   * @returns {Promise<Object|null>} Role object or null
+   */
+  async getRoleBySlug(slug, organizationId) {
+    if (!slug || !organizationId) {
+      return null;
+    }
+
+    try {
+      const [role] = await db
+        .select()
+        .from(roles)
+        .where(
+          and(
+            eq(roles.organizationId, organizationId),
+            eq(roles.slug, slug.toLowerCase())
+          )
+        )
+        .limit(1);
+
+      return role ? this._formatRole(role) : null;
+    } catch (error) {
+      logger.error(
+        { error, organizationId, slug },
+        "Failed to get role by slug"
+      );
+      return null;
+    }
   }
 
   /**
@@ -322,7 +370,10 @@ class RolesService {
 
       return !!existing;
     } catch (error) {
-      logger.error({ error, organizationId, slug }, 'Failed to check role existence');
+      logger.error(
+        { error, organizationId, slug },
+        "Failed to check role existence"
+      );
       return false;
     }
   }
@@ -341,7 +392,7 @@ class RolesService {
       description: role.description,
       organizationId: role.organizationId,
       createdAt: role.createdAt,
-      updatedAt: role.updatedAt
+      updatedAt: role.updatedAt,
     };
   }
 }

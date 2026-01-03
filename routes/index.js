@@ -11,6 +11,9 @@ import userPlansRoutes from "./user-plans.routes.js";
 import permissionsRoutes from "./permissions.routes.js";
 import usageRoutes from "./usage.routes.js";
 import dashboardRoutes from "./dashboard.routes.js";
+import adminManagementRoutes from "./admin-management.routes.js";
+import apiKeysRoutes from "./api-keys.routes.js";
+import externalApiRoutes from "./external-api.routes.js";
 
 const router = express.Router();
 
@@ -31,8 +34,15 @@ router.use("/admin", overridesRoutes); // Overrides routes are under /api/admin 
 router.use("/admin", userPlansRoutes); // User plans routes are under /api/admin
 router.use("/admin", usageRoutes); // Usage routes are under /api/admin
 router.use("/admin", dashboardRoutes); // Dashboard routes are under /api/admin
+router.use("/admin", adminManagementRoutes); // Admin management routes are under /api/admin
 
 // Permissions routes (authentication required)
 router.use("/", permissionsRoutes); // Permissions routes are under /api/users/:userId/permissions and /api/me/permissions
+
+// API Key management routes (Clerk auth required - for dashboard)
+router.use("/admin", apiKeysRoutes); // API key management under /api/admin/organizations/:orgId/api-keys
+
+// External API routes (API KEY auth - for external SaaS apps)
+router.use("/v1", externalApiRoutes); // External APIs under /api/v1/*
 
 export default router;
