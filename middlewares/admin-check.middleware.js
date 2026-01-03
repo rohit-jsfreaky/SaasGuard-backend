@@ -48,8 +48,18 @@ export const requireAdmin = async (req, res, next) => {
       throw new ForbiddenError("Authentication required");
     }
 
-    // Get organization ID from request
+    // Get organization ID from request (params, query, body, or user's org)
     let organizationId = parseInt(req.params.orgId, 10);
+
+    // Also check query parameter
+    if (!organizationId || isNaN(organizationId)) {
+      organizationId = parseInt(req.query.orgId, 10);
+    }
+
+    // Also check request body
+    if (!organizationId || isNaN(organizationId)) {
+      organizationId = parseInt(req.body?.organizationId, 10);
+    }
 
     // Get current user from database
     const currentUser = await usersService.getUserByClerkId(clerkId);
@@ -57,7 +67,7 @@ export const requireAdmin = async (req, res, next) => {
       throw new ForbiddenError("User not found");
     }
 
-    // If no orgId in params, use user's organization
+    // If no orgId found anywhere, use user's organization
     if (!organizationId || isNaN(organizationId)) {
       organizationId = currentUser.organizationId;
     }

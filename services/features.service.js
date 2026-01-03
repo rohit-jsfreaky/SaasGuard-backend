@@ -1,195 +1,226 @@
-import { eq, ilike, or, desc, sql } from 'drizzle-orm';
-import db from '../config/db.js';
-import { features } from '../models/features.model.js';
-import { planFeatures } from '../models/plan-features.model.js';
-import { rolePermissions } from '../models/role-permissions.model.js';
-import logger from '../utilities/logger.js';
-import { NotFoundError, ValidationError, ConflictError } from '../utilities/errors.js';
-import cacheService from './cache.service.js';
-import cacheKeys from '../utilities/cache-keys.js';
-import { CACHE_TTL } from '../utilities/cache-keys.js';
+import { eq, and, ilike, or, desc, sql } from "drizzle-orm";
+import db from "../config/db.js";
+import { features } from "../models/features.model.js";
+import { planFeatures } from "../models/plan-features.model.js";
+import { rolePermissions } from "../models/role-permissions.model.js";
+import logger from "../utilities/logger.js";
+import {
+  NotFoundError,
+  ValidationError,
+  ConflictError,
+} from "../utilities/errors.js";
+import cacheService from "./cache.service.js";
+import cacheKeys from "../utilities/cache-keys.js";
+import { CACHE_TTL } from "../utilities/cache-keys.js";
 
 /**
  * FeaturesService - Handles all feature-related database operations
- * Features are globally unique and application-wide (not org-scoped)
+ * Features are organization-scoped - each organization has its own features
  */
 class FeaturesService {
   /**
-   * Create new feature
+   * Create new feature for an organization
+   * @param {number} organizationId - Organization ID
    * @param {string} name - Feature name
    * @param {string} slug - Feature slug (lowercase, alphanumeric, hyphens)
    * @param {string|null} description - Feature description (optional)
    * @returns {Promise<Object>} Feature object
    */
-  async createFeature(name, slug, description = null) {
+  async createFeature(organizationId, name, slug, description = null) {
+    if (!organizationId) {
+      throw new ValidationError("Organization ID is required");
+    }
+
     if (!name || name.trim().length === 0) {
-      throw new ValidationError('Feature name is required');
+      throw new ValidationError("Feature name is required");
     }
 
     if (!slug || slug.trim().length === 0) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     // Validate slug format: lowercase, alphanumeric, hyphens
     const slugRegex = /^[a-z0-9-]+$/;
     if (!slugRegex.test(slug)) {
-      throw new ValidationError('Slug must be lowercase, alphanumeric, and can contain hyphens');
+      throw new ValidationError(
+        "Slug must be lowercase, alphanumeric, and can contain hyphens"
+      );
     }
 
-    // Check if slug already exists
-    const existing = await this.featureExists(slug);
+    // Check if slug already exists in this organization
+    const existing = await this.featureExistsInOrg(organizationId, slug);
     if (existing) {
-      throw new ConflictError(`Feature with slug '${slug}' already exists`);
+      throw new ConflictError(
+        `Feature with slug '${slug}' already exists in this organization`
+      );
     }
 
     try {
       const [newFeature] = await db
         .insert(features)
         .values({
+          organizationId,
           name: name.trim(),
           slug: slug.trim().toLowerCase(),
-          description: description?.trim() || null
+          description: description?.trim() || null,
         })
         .returning();
 
-      logger.info({ featureId: newFeature.id, name, slug }, 'Feature created');
+      logger.info(
+        { featureId: newFeature.id, organizationId, name, slug },
+        "Feature created"
+      );
 
-      // Invalidate all features cache
-      await cacheService.del('features:all');
+      // Invalidate org features cache
+      await cacheService.del(`features:org:${organizationId}`);
 
       return this._formatFeature(newFeature);
     } catch (error) {
-      logger.error({ error, name, slug }, 'Failed to create feature');
-      
+      logger.error(
+        { error, organizationId, name, slug },
+        "Failed to create feature"
+      );
+
       // Handle unique constraint violation
-      if (error.code === '23505' || error.message?.includes('unique')) {
-        throw new ConflictError(`Feature with slug '${slug}' already exists`);
+      if (error.code === "23505" || error.message?.includes("unique")) {
+        throw new ConflictError(
+          `Feature with slug '${slug}' already exists in this organization`
+        );
       }
-      
+
       throw error;
     }
   }
 
   /**
-   * Get feature by ID or slug
-   * Cached for 24 hours
-   * @param {string|number} identifier - Feature ID or slug
+   * Get feature by ID
+   * @param {number} featureId - Feature ID
    * @returns {Promise<Object|null>} Feature object or null
    */
-  async getFeature(identifier) {
-    if (!identifier) {
-      throw new ValidationError('Feature identifier is required');
+  async getFeature(featureId) {
+    if (!featureId) {
+      throw new ValidationError("Feature ID is required");
     }
 
-    // Check cache first
-    const cacheKey = cacheKeys.feature(identifier);
+    const cacheKey = cacheKeys.feature(featureId);
     const cached = await cacheService.get(cacheKey);
 
     if (cached) {
-      logger.debug({ identifier }, 'Feature retrieved from cache');
+      logger.debug({ featureId }, "Feature retrieved from cache");
       return cached;
     }
 
     try {
-      // Try as ID first (if numeric), then as slug
-      const isNumeric = !isNaN(identifier) && !isNaN(parseInt(identifier, 10));
-      
-      let feature;
-      if (isNumeric) {
-        [feature] = await db
-          .select()
-          .from(features)
-          .where(eq(features.id, parseInt(identifier, 10)))
-          .limit(1);
-      }
-
-      // If not found by ID or not numeric, try slug
-      if (!feature) {
-        [feature] = await db
-          .select()
-          .from(features)
-          .where(eq(features.slug, String(identifier).toLowerCase()))
-          .limit(1);
-      }
+      const [feature] = await db
+        .select()
+        .from(features)
+        .where(eq(features.id, featureId))
+        .limit(1);
 
       if (!feature) {
         return null;
       }
 
       const formatted = this._formatFeature(feature);
-
-      // Cache for 24 hours (features are static)
       await cacheService.set(cacheKey, formatted, CACHE_TTL.FEATURES);
-      
-      // Also cache by slug if looked up by ID
-      if (isNumeric && feature.slug) {
-        await cacheService.set(cacheKeys.feature(feature.slug), formatted, CACHE_TTL.FEATURES);
-      }
 
       return formatted;
     } catch (error) {
-      logger.error({ error, identifier }, 'Failed to get feature');
+      logger.error({ error, featureId }, "Failed to get feature");
       throw error;
     }
   }
 
   /**
-   * Get feature by slug
-   * Cached for 24 hours
+   * Get feature by slug within an organization
+   * @param {number} organizationId - Organization ID
    * @param {string} slug - Feature slug
    * @returns {Promise<Object|null>} Feature object or null
    */
-  async getFeatureBySlug(slug) {
-    return this.getFeature(slug);
+  async getFeatureBySlug(organizationId, slug) {
+    if (!organizationId || !slug) {
+      return null;
+    }
+
+    try {
+      const [feature] = await db
+        .select()
+        .from(features)
+        .where(
+          and(
+            eq(features.organizationId, organizationId),
+            eq(features.slug, slug.toLowerCase())
+          )
+        )
+        .limit(1);
+
+      return feature ? this._formatFeature(feature) : null;
+    } catch (error) {
+      logger.error(
+        { error, organizationId, slug },
+        "Failed to get feature by slug"
+      );
+      return null;
+    }
   }
 
   /**
-   * Get all features with pagination
-   * Cached for 24 hours
+   * Get all features for an organization with pagination
+   * @param {number} organizationId - Organization ID
    * @param {number} limit - Page size (default: 100)
    * @param {number} offset - Offset for pagination (default: 0)
    * @returns {Promise<Object>} { features: [], total: number, hasMore: boolean }
    */
-  async getAllFeatures(limit = 100, offset = 0) {
+  async getAllFeatures(organizationId, limit = 100, offset = 0) {
+    if (!organizationId) {
+      throw new ValidationError("Organization ID is required");
+    }
+
     // Check cache for all features (only if no pagination)
+    const cacheKey = `features:org:${organizationId}`;
     if (offset === 0 && limit >= 100) {
-      const cached = await cacheService.get('features:all');
+      const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug('All features retrieved from cache');
+        logger.debug({ organizationId }, "Org features retrieved from cache");
         return cached;
       }
     }
 
     try {
-      // Get total count using SQL
+      // Get total count for this organization
       const totalResult = await db
         .select({ count: sql`count(*)` })
-        .from(features);
+        .from(features)
+        .where(eq(features.organizationId, organizationId));
 
       const total = Number(totalResult[0]?.count || 0);
 
-      // Get paginated features
+      // Get paginated features for this organization
       const featureList = await db
         .select()
         .from(features)
+        .where(eq(features.organizationId, organizationId))
         .orderBy(desc(features.createdAt))
         .limit(limit)
         .offset(offset);
 
       const result = {
-        features: featureList.map(f => this._formatFeature(f)),
+        features: featureList.map((f) => this._formatFeature(f)),
         total,
-        hasMore: offset + limit < total
+        hasMore: offset + limit < total,
       };
 
-      // Cache all features if no pagination
+      // Cache if no pagination
       if (offset === 0 && limit >= 100) {
-        await cacheService.set('features:all', result, CACHE_TTL.FEATURES);
+        await cacheService.set(cacheKey, result, CACHE_TTL.FEATURES);
       }
 
       return result;
     } catch (error) {
-      logger.error({ error }, 'Failed to get all features');
+      logger.error(
+        { error, organizationId },
+        "Failed to get organization features"
+      );
       throw error;
     }
   }
@@ -203,58 +234,52 @@ class FeaturesService {
    */
   async updateFeature(featureId, updates) {
     if (!featureId) {
-      throw new ValidationError('Feature ID is required');
+      throw new ValidationError("Feature ID is required");
     }
 
-    // Only allow updating name and description
-    const allowedFields = ['name', 'description'];
-    const filteredUpdates = {};
+    // Get existing feature
+    const existing = await this.getFeature(featureId);
+    if (!existing) {
+      throw new NotFoundError("Feature not found");
+    }
 
-    for (const field of allowedFields) {
-      if (updates[field] !== undefined) {
-        if (field === 'name' && (!updates[field] || updates[field].trim().length === 0)) {
-          throw new ValidationError('Feature name cannot be empty');
-        }
-        filteredUpdates[field] = updates[field]?.trim() || null;
+    // Slug is immutable
+    if (updates.slug !== undefined && updates.slug !== existing.slug) {
+      throw new ValidationError("Feature slug cannot be modified");
+    }
+
+    // Build update data
+    const updateData = {
+      updatedAt: new Date(),
+    };
+
+    if (updates.name !== undefined) {
+      if (!updates.name || updates.name.trim().length === 0) {
+        throw new ValidationError("Feature name cannot be empty");
       }
+      updateData.name = updates.name.trim();
     }
 
-    if (Object.keys(filteredUpdates).length === 0) {
-      throw new ValidationError('No valid fields to update');
+    if (updates.description !== undefined) {
+      updateData.description = updates.description?.trim() || null;
     }
-
-    // Add updated timestamp
-    filteredUpdates.updatedAt = new Date();
 
     try {
-      // Get feature first
-      const [existingFeature] = await db
-        .select()
-        .from(features)
-        .where(eq(features.id, featureId))
-        .limit(1);
-
-      if (!existingFeature) {
-        throw new NotFoundError('Feature not found');
-      }
-
-      // Update feature
       const [updated] = await db
         .update(features)
-        .set(filteredUpdates)
+        .set(updateData)
         .where(eq(features.id, featureId))
         .returning();
 
       // Invalidate caches
       await cacheService.del(cacheKeys.feature(featureId));
-      await cacheService.del(cacheKeys.feature(existingFeature.slug));
-      await cacheService.del('features:all');
+      await cacheService.del(`features:org:${existing.organizationId}`);
 
-      logger.info({ featureId, updates: filteredUpdates }, 'Feature updated');
+      logger.info({ featureId }, "Feature updated");
 
       return this._formatFeature(updated);
     } catch (error) {
-      logger.error({ error, featureId }, 'Failed to update feature');
+      logger.error({ error, featureId }, "Failed to update feature");
       throw error;
     }
   }
@@ -267,91 +292,161 @@ class FeaturesService {
    */
   async deleteFeature(featureId) {
     if (!featureId) {
-      throw new ValidationError('Feature ID is required');
+      throw new ValidationError("Feature ID is required");
+    }
+
+    // Get existing feature
+    const existing = await this.getFeature(featureId);
+    if (!existing) {
+      throw new NotFoundError("Feature not found");
+    }
+
+    // Check if used in plans
+    const planUsage = await db
+      .select()
+      .from(planFeatures)
+      .where(eq(planFeatures.featureId, featureId))
+      .limit(1);
+
+    if (planUsage.length > 0) {
+      throw new ConflictError(
+        "Cannot delete feature that is used in plans. Remove from plans first."
+      );
+    }
+
+    // Check if used in role permissions
+    const roleUsage = await db
+      .select()
+      .from(rolePermissions)
+      .where(eq(rolePermissions.featureSlug, existing.slug))
+      .limit(1);
+
+    if (roleUsage.length > 0) {
+      throw new ConflictError(
+        "Cannot delete feature that is used in role permissions. Remove from roles first."
+      );
     }
 
     try {
-      // Get feature first
-      const feature = await this.getFeature(featureId);
-      if (!feature) {
-        throw new NotFoundError('Feature not found');
-      }
-
-      // Check if used in plans
-      const planUsageResult = await db
-        .select({ count: sql`count(*)` })
-        .from(planFeatures)
-        .where(eq(planFeatures.featureId, featureId));
-
-      const planCount = Number(planUsageResult[0]?.count || 0);
-
-      // Check if used in roles (by slug)
-      const roleUsageResult = await db
-        .select({ count: sql`count(*)` })
-        .from(rolePermissions)
-        .where(eq(rolePermissions.featureSlug, feature.slug));
-
-      const roleCount = Number(roleUsageResult[0]?.count || 0);
-
-      if (planCount > 0 || roleCount > 0) {
-        const reasons = [];
-        if (planCount > 0) reasons.push(`used in ${planCount} plan(s)`);
-        if (roleCount > 0) reasons.push(`used in ${roleCount} role(s)`);
-        throw new ConflictError(`Cannot delete feature: ${reasons.join(', ')}`);
-      }
-
-      // Delete feature
-      await db
-        .delete(features)
-        .where(eq(features.id, featureId));
+      await db.delete(features).where(eq(features.id, featureId));
 
       // Invalidate caches
       await cacheService.del(cacheKeys.feature(featureId));
-      await cacheService.del(cacheKeys.feature(feature.slug));
-      await cacheService.del('features:all');
+      await cacheService.del(`features:org:${existing.organizationId}`);
 
-      logger.info({ featureId, slug: feature.slug }, 'Feature deleted');
+      logger.info(
+        { featureId, organizationId: existing.organizationId },
+        "Feature deleted"
+      );
     } catch (error) {
-      logger.error({ error, featureId }, 'Failed to delete feature');
+      logger.error({ error, featureId }, "Failed to delete feature");
       throw error;
     }
   }
 
   /**
-   * Search features by name or description
+   * Search features within an organization
+   * @param {number} organizationId - Organization ID
    * @param {string} query - Search query
    * @returns {Promise<Array>} Array of matching features
    */
-  async searchFeatures(query) {
-    if (!query || query.trim().length === 0) {
-      throw new ValidationError('Search query is required');
+  async searchFeatures(organizationId, query) {
+    if (!organizationId) {
+      throw new ValidationError("Organization ID is required");
     }
 
-    try {
-      const searchTerm = `%${query.trim()}%`;
+    if (!query || query.trim().length === 0) {
+      return [];
+    }
 
+    const searchTerm = `%${query.trim()}%`;
+
+    try {
       const results = await db
         .select()
         .from(features)
         .where(
-          or(
-            ilike(features.name, searchTerm),
-            ilike(features.description, searchTerm)
+          and(
+            eq(features.organizationId, organizationId),
+            or(
+              ilike(features.name, searchTerm),
+              ilike(features.slug, searchTerm),
+              ilike(features.description, searchTerm)
+            )
           )
         )
         .orderBy(desc(features.createdAt))
         .limit(50);
 
-      return results.map(f => this._formatFeature(f));
+      return results.map((f) => this._formatFeature(f));
     } catch (error) {
-      logger.error({ error, query }, 'Failed to search features');
-      throw error;
+      logger.error(
+        { error, organizationId, query },
+        "Failed to search features"
+      );
+      return [];
     }
   }
 
   /**
-   * Check if feature exists by slug
-   * Cached for 24 hours
+   * Check if feature exists by slug in an organization
+   * @param {number} organizationId - Organization ID
+   * @param {string} slug - Feature slug
+   * @returns {Promise<boolean>}
+   */
+  async featureExistsInOrg(organizationId, slug) {
+    if (!organizationId || !slug) {
+      return false;
+    }
+
+    try {
+      const [existing] = await db
+        .select({ id: features.id })
+        .from(features)
+        .where(
+          and(
+            eq(features.organizationId, organizationId),
+            eq(features.slug, slug.toLowerCase())
+          )
+        )
+        .limit(1);
+
+      return !!existing;
+    } catch (error) {
+      logger.error(
+        { error, organizationId, slug },
+        "Failed to check feature existence"
+      );
+      return false;
+    }
+  }
+
+  /**
+   * Get total count of features for an organization
+   * @param {number} organizationId - Organization ID
+   * @returns {Promise<number>}
+   */
+  async getTotalFeaturesCount(organizationId) {
+    if (!organizationId) {
+      return 0;
+    }
+
+    try {
+      const result = await db
+        .select({ count: sql`count(*)` })
+        .from(features)
+        .where(eq(features.organizationId, organizationId));
+
+      return Number(result[0]?.count || 0);
+    } catch (error) {
+      logger.error({ error, organizationId }, "Failed to get features count");
+      return 0;
+    }
+  }
+
+  /**
+   * Legacy method - Check if feature exists by slug (global check for backward compatibility)
+   * @deprecated Use featureExistsInOrg instead
    * @param {string} slug - Feature slug
    * @returns {Promise<boolean>}
    */
@@ -361,25 +456,16 @@ class FeaturesService {
     }
 
     try {
-      const feature = await this.getFeatureBySlug(slug);
-      return feature !== null;
-    } catch (error) {
-      logger.error({ error, slug }, 'Failed to check if feature exists');
-      return false;
-    }
-  }
+      const [existing] = await db
+        .select({ id: features.id })
+        .from(features)
+        .where(eq(features.slug, slug.toLowerCase()))
+        .limit(1);
 
-  /**
-   * Get total count of features
-   * @returns {Promise<number>}
-   */
-  async getTotalFeaturesCount() {
-    try {
-      const result = await this.getAllFeatures(1, 0);
-      return result.total;
+      return !!existing;
     } catch (error) {
-      logger.error({ error }, 'Failed to get total features count');
-      throw error;
+      logger.error({ error, slug }, "Failed to check feature existence");
+      return false;
     }
   }
 
@@ -392,11 +478,12 @@ class FeaturesService {
   _formatFeature(feature) {
     return {
       id: feature.id,
+      organizationId: feature.organizationId,
       name: feature.name,
       slug: feature.slug,
       description: feature.description,
       createdAt: feature.createdAt,
-      updatedAt: feature.updatedAt
+      updatedAt: feature.updatedAt,
     };
   }
 }
