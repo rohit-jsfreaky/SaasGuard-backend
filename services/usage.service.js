@@ -1,12 +1,12 @@
-import { eq, and, inArray, sql } from 'drizzle-orm';
-import db from '../config/db.js';
-import { usage } from '../models/usage.model.js';
-import logger from '../utilities/logger.js';
-import { NotFoundError, ValidationError } from '../utilities/errors.js';
-import cacheService from './cache.service.js';
-import cacheKeys from '../utilities/cache-keys.js';
-import { CACHE_TTL } from '../utilities/cache-keys.js';
-import usersService from './users.service.js';
+import { eq, and, inArray, sql } from "drizzle-orm";
+import db from "../config/db.js";
+import { usage } from "../models/usage.model.js";
+import logger from "../utilities/logger.js";
+import { NotFoundError, ValidationError } from "../utilities/errors.js";
+import cacheService from "./cache.service.js";
+import cacheKeys from "../utilities/cache-keys.js";
+import { CACHE_TTL } from "../utilities/cache-keys.js";
+import usersService from "./users.service.js";
 
 /**
  * UsageService - Handles usage tracking for limited features
@@ -24,21 +24,21 @@ class UsageService {
    */
   async recordUsage(userId, featureSlug, amount = 1) {
     if (!userId) {
-      throw new ValidationError('User ID is required');
+      throw new ValidationError("User ID is required");
     }
 
     if (!featureSlug || featureSlug.trim().length === 0) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     if (amount <= 0) {
-      throw new ValidationError('Amount must be positive');
+      throw new ValidationError("Amount must be positive");
     }
 
     // Verify user exists
     const user = await usersService.getUserById(userId);
     if (!user) {
-      throw new NotFoundError('User not found');
+      throw new NotFoundError("User not found");
     }
 
     try {
@@ -48,25 +48,31 @@ class UsageService {
         .values({
           userId,
           featureSlug: featureSlug.toLowerCase(),
-          currentUsage: amount
+          currentUsage: amount,
         })
         .onConflictDoUpdate({
           target: [usage.userId, usage.featureSlug],
           set: {
             currentUsage: sql`${usage.currentUsage} + ${amount}`,
-            updatedAt: new Date()
-          }
+            updatedAt: new Date(),
+          },
         })
         .returning();
 
       // Invalidate caches
       await this._invalidateCaches(userId, featureSlug);
 
-      logger.info({ userId, featureSlug, amount, newUsage: result.currentUsage }, 'Usage recorded');
+      logger.info(
+        { userId, featureSlug, amount, newUsage: result.currentUsage },
+        "Usage recorded"
+      );
 
       return this._formatUsage(result);
     } catch (error) {
-      logger.error({ error, userId, featureSlug, amount }, 'Failed to record usage');
+      logger.error(
+        { error, userId, featureSlug, amount },
+        "Failed to record usage"
+      );
       throw error;
     }
   }
@@ -88,7 +94,7 @@ class UsageService {
       // Try cache first
       const cached = await cacheService.get(cacheKey);
       if (cached !== null) {
-        logger.debug({ userId, featureSlug }, 'Usage retrieved from cache');
+        logger.debug({ userId, featureSlug }, "Usage retrieved from cache");
         return cached;
       }
 
@@ -110,7 +116,7 @@ class UsageService {
 
       return usageCount;
     } catch (error) {
-      logger.error({ error, userId, featureSlug }, 'Failed to get usage');
+      logger.error({ error, userId, featureSlug }, "Failed to get usage");
       return 0;
     }
   }
@@ -122,7 +128,7 @@ class UsageService {
    */
   async getUserUsage(userId) {
     if (!userId) {
-      throw new ValidationError('User ID is required');
+      throw new ValidationError("User ID is required");
     }
 
     try {
@@ -132,14 +138,14 @@ class UsageService {
         .where(eq(usage.userId, userId))
         .orderBy(usage.featureSlug);
 
-      return usageRecords.map(record => ({
+      return usageRecords.map((record) => ({
         featureSlug: record.featureSlug,
         currentUsage: record.currentUsage,
         createdAt: record.createdAt,
-        updatedAt: record.updatedAt
+        updatedAt: record.updatedAt,
       }));
     } catch (error) {
-      logger.error({ error, userId }, 'Failed to get user usage');
+      logger.error({ error, userId }, "Failed to get user usage");
       throw error;
     }
   }
@@ -152,7 +158,7 @@ class UsageService {
    */
   async resetUsage(userId, featureSlug) {
     if (!userId || !featureSlug) {
-      throw new ValidationError('User ID and feature slug are required');
+      throw new ValidationError("User ID and feature slug are required");
     }
 
     try {
@@ -160,7 +166,7 @@ class UsageService {
         .update(usage)
         .set({
           currentUsage: 0,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(
           and(
@@ -172,9 +178,9 @@ class UsageService {
       // Invalidate caches
       await this._invalidateCaches(userId, featureSlug);
 
-      logger.info({ userId, featureSlug }, 'Usage reset');
+      logger.info({ userId, featureSlug }, "Usage reset");
     } catch (error) {
-      logger.error({ error, userId, featureSlug }, 'Failed to reset usage');
+      logger.error({ error, userId, featureSlug }, "Failed to reset usage");
       throw error;
     }
   }
@@ -186,7 +192,7 @@ class UsageService {
    */
   async resetAllUsageForUser(userId) {
     if (!userId) {
-      throw new ValidationError('User ID is required');
+      throw new ValidationError("User ID is required");
     }
 
     try {
@@ -194,7 +200,7 @@ class UsageService {
         .update(usage)
         .set({
           currentUsage: 0,
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(usage.userId, userId))
         .returning();
@@ -202,11 +208,11 @@ class UsageService {
       // Invalidate all user usage caches
       await cacheService.del(cacheKeys.userUsage(String(userId)));
 
-      logger.info({ userId, count: result.length }, 'All usage reset for user');
+      logger.info({ userId, count: result.length }, "All usage reset for user");
 
       return result.length;
     } catch (error) {
-      logger.error({ error, userId }, 'Failed to reset all usage for user');
+      logger.error({ error, userId }, "Failed to reset all usage for user");
       throw error;
     }
   }
@@ -223,7 +229,7 @@ class UsageService {
     }
 
     if (!featureSlug) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     try {
@@ -238,14 +244,14 @@ class UsageService {
         );
 
       const usageMap = {};
-      userIds.forEach(userId => {
-        const record = usageRecords.find(r => r.userId === userId);
+      userIds.forEach((userId) => {
+        const record = usageRecords.find((r) => r.userId === userId);
         usageMap[userId] = record ? record.currentUsage : 0;
       });
 
       return usageMap;
     } catch (error) {
-      logger.error({ error, userIds, featureSlug }, 'Failed to bulk get usage');
+      logger.error({ error, userIds, featureSlug }, "Failed to bulk get usage");
       return {};
     }
   }
@@ -271,15 +277,15 @@ class UsageService {
    */
   async setUsage(userId, featureSlug, amount) {
     if (!userId) {
-      throw new ValidationError('User ID is required');
+      throw new ValidationError("User ID is required");
     }
 
     if (!featureSlug || featureSlug.trim().length === 0) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     if (amount < 0) {
-      throw new ValidationError('Amount must be non-negative');
+      throw new ValidationError("Amount must be non-negative");
     }
 
     try {
@@ -288,25 +294,28 @@ class UsageService {
         .values({
           userId,
           featureSlug: featureSlug.toLowerCase(),
-          currentUsage: amount
+          currentUsage: amount,
         })
         .onConflictDoUpdate({
           target: [usage.userId, usage.featureSlug],
           set: {
             currentUsage: amount,
-            updatedAt: new Date()
-          }
+            updatedAt: new Date(),
+          },
         })
         .returning();
 
       // Invalidate caches
       await this._invalidateCaches(userId, featureSlug);
 
-      logger.info({ userId, featureSlug, amount }, 'Usage set');
+      logger.info({ userId, featureSlug, amount }, "Usage set");
 
       return this._formatUsage(result);
     } catch (error) {
-      logger.error({ error, userId, featureSlug, amount }, 'Failed to set usage');
+      logger.error(
+        { error, userId, featureSlug, amount },
+        "Failed to set usage"
+      );
       throw error;
     }
   }
@@ -318,7 +327,7 @@ class UsageService {
    */
   async getUsageByFeature(featureSlug) {
     if (!featureSlug) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     const cacheKey = `usage:feature:${featureSlug}`;
@@ -327,7 +336,10 @@ class UsageService {
       // Try cache first
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug({ featureSlug }, 'Feature usage stats retrieved from cache');
+        logger.debug(
+          { featureSlug },
+          "Feature usage stats retrieved from cache"
+        );
         return cached;
       }
 
@@ -336,18 +348,23 @@ class UsageService {
         .from(usage)
         .where(eq(usage.featureSlug, featureSlug.toLowerCase()));
 
-      const totalUsage = usageRecords.reduce((sum, record) => sum + record.currentUsage, 0);
+      const totalUsage = usageRecords.reduce(
+        (sum, record) => sum + record.currentUsage,
+        0
+      );
       const usersUsingIt = usageRecords.length;
-      const averageUsage = usersUsingIt > 0 ? Math.round(totalUsage / usersUsingIt) : 0;
-      const maxUsage = usageRecords.length > 0
-        ? Math.max(...usageRecords.map(r => r.currentUsage))
-        : 0;
+      const averageUsage =
+        usersUsingIt > 0 ? Math.round(totalUsage / usersUsingIt) : 0;
+      const maxUsage =
+        usageRecords.length > 0
+          ? Math.max(...usageRecords.map((r) => r.currentUsage))
+          : 0;
 
       const stats = {
         totalUsage,
         averageUsage,
         maxUsage,
-        usersUsingIt
+        usersUsingIt,
       };
 
       // Cache for 1 hour
@@ -355,7 +372,7 @@ class UsageService {
 
       return stats;
     } catch (error) {
-      logger.error({ error, featureSlug }, 'Failed to get usage by feature');
+      logger.error({ error, featureSlug }, "Failed to get usage by feature");
       throw error;
     }
   }
@@ -369,13 +386,17 @@ class UsageService {
    */
   async getUserUsageForOrganization(userId, organizationId) {
     if (!userId || !organizationId) {
-      throw new ValidationError('User ID and Organization ID are required');
+      throw new ValidationError("User ID and Organization ID are required");
     }
 
     try {
       // Get user's plan
-      const userPlansService = (await import('./user-plans.service.js')).default;
-      const userPlan = await userPlansService.getUserPlan(userId, organizationId);
+      const userPlansService = (await import("./user-plans.service.js"))
+        .default;
+      const userPlan = await userPlansService.getUserPlan(
+        userId,
+        organizationId
+      );
 
       if (!userPlan) {
         // User has no plan - return empty array
@@ -383,7 +404,8 @@ class UsageService {
       }
 
       // Get plan limits
-      const planLimitsService = (await import('./plan-limits.service.js')).default;
+      const planLimitsService = (await import("./plan-limits.service.js"))
+        .default;
       const planLimits = await planLimitsService.getPlanLimits(userPlan.planId);
 
       // Get user's usage for all features with limits
@@ -393,20 +415,23 @@ class UsageService {
         .where(eq(usage.userId, userId));
 
       // Combine limits with usage
-      const result = planLimits.map(limit => {
+      const result = planLimits.map((limit) => {
         const usageRecord = usageRecords.find(
-          r => r.featureSlug === limit.featureSlug.toLowerCase()
+          (r) => r.featureSlug === limit.featureSlug.toLowerCase()
         );
         return {
           featureSlug: limit.featureSlug,
           currentUsage: usageRecord ? usageRecord.currentUsage : 0,
-          limit: limit.maxLimit
+          limit: limit.maxLimit,
         };
       });
 
       return result;
     } catch (error) {
-      logger.error({ error, userId, organizationId }, 'Failed to get user usage for organization');
+      logger.error(
+        { error, userId, organizationId },
+        "Failed to get user usage for organization"
+      );
       throw error;
     }
   }
@@ -418,11 +443,33 @@ class UsageService {
    * @param {string} featureSlug - Feature slug
    */
   async _invalidateCaches(userId, featureSlug) {
-    await cacheService.del(cacheKeys.userUsageForFeature(String(userId), featureSlug));
+    await cacheService.del(
+      cacheKeys.userUsageForFeature(String(userId), featureSlug)
+    );
     await cacheService.del(cacheKeys.userUsage(String(userId)));
-    // Also invalidate permission cache since usage affects permissions
-    // Note: organizationId is needed for permission cache, but we'll invalidate all orgs
-    // This is a limitation - in production you might want to track orgId in usage
+
+    // Also invalidate permission cache since usage affects the 'used' count in limits
+    // And dashboard cache since it shows feature usage stats
+    try {
+      const user = await usersService.getUserById(userId);
+      if (user && user.organizationId) {
+        await cacheService.del(
+          cacheKeys.userPermissions(String(userId), user.organizationId)
+        );
+        // Invalidate dashboard overview cache so usage stats are fresh
+        await cacheService.del(`dashboard:overview:${user.organizationId}`);
+        // Invalidate feature usage cache
+        await cacheService.del(`usage:feature:${featureSlug}`);
+
+        logger.debug(
+          { userId, organizationId: user.organizationId, featureSlug },
+          "Caches invalidated after usage change"
+        );
+      }
+    } catch (error) {
+      logger.warn({ error, userId }, "Failed to invalidate caches after usage");
+      // Don't throw - this is a best-effort cleanup
+    }
   }
 
   /**
@@ -438,7 +485,7 @@ class UsageService {
       featureSlug: usageRecord.featureSlug,
       currentUsage: usageRecord.currentUsage,
       createdAt: usageRecord.createdAt,
-      updatedAt: usageRecord.updatedAt
+      updatedAt: usageRecord.updatedAt,
     };
   }
 }

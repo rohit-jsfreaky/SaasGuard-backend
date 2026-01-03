@@ -31,6 +31,6 @@ coverage/
 *.tgz
 .cache/
 
-# Markdown files (except README.md)
 *.md
 !README.md
+postman/

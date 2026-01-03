@@ -1,15 +1,15 @@
-import logger from '../utilities/logger.js';
-import { NotFoundError, ValidationError } from '../utilities/errors.js';
-import cacheService from './cache.service.js';
-import cacheKeys from '../utilities/cache-keys.js';
-import { CACHE_TTL } from '../utilities/cache-keys.js';
-import usersService from './users.service.js';
-import userPlansService from './user-plans.service.js';
-import planFeaturesService from './plan-features.service.js';
-import planLimitsService from './plan-limits.service.js';
-import userRolesService from './user-roles.service.js';
-import rolePermissionsService from './role-permissions.service.js';
-import overridesService from './overrides.service.js';
+import logger from "../utilities/logger.js";
+import { NotFoundError, ValidationError } from "../utilities/errors.js";
+import cacheService from "./cache.service.js";
+import cacheKeys from "../utilities/cache-keys.js";
+import { CACHE_TTL } from "../utilities/cache-keys.js";
+import usersService from "./users.service.js";
+import userPlansService from "./user-plans.service.js";
+import planFeaturesService from "./plan-features.service.js";
+import planLimitsService from "./plan-limits.service.js";
+import userRolesService from "./user-roles.service.js";
+import rolePermissionsService from "./role-permissions.service.js";
+import overridesService from "./overrides.service.js";
 
 /**
  * PermissionResolutionService - THE CORE OF SAAS GUARD
@@ -26,7 +26,7 @@ class PermissionResolutionService {
    */
   async resolvePermissions(userId, organizationId) {
     if (!userId || !organizationId) {
-      throw new ValidationError('User ID and Organization ID are required');
+      throw new ValidationError("User ID and Organization ID are required");
     }
 
     const cacheKey = cacheKeys.userPermissions(String(userId), organizationId);
@@ -35,26 +35,33 @@ class PermissionResolutionService {
       // Try cache first (5 minute TTL)
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug({ userId, organizationId }, 'Permissions retrieved from cache');
+        logger.debug(
+          { userId, organizationId },
+          "Permissions retrieved from cache"
+        );
         return cached;
       }
 
       // Step 1: Load user (verify exists)
       const user = await usersService.getUserById(userId);
       if (!user) {
-        throw new NotFoundError('User not found');
+        throw new NotFoundError("User not found");
       }
 
       // Step 2: Load user's plan
-      const userPlan = await userPlansService.getUserPlan(userId, organizationId);
-      
+      const userPlan = await userPlansService.getUserPlan(
+        userId,
+        organizationId
+      );
+
       // Step 3: Load plan features (if plan exists)
       let planFeatures = [];
       let planLimitsMap = {};
-      
+
       if (userPlan) {
-        planFeatures = await planFeaturesService.getPlanFeatures(userPlan.planId);
-        const planLimits = await planLimitsService.getPlanLimits(userPlan.planId);
+        // Note: userPlan.id is the plan's ID (getUserPlan returns plan object with id property)
+        planFeatures = await planFeaturesService.getPlanFeatures(userPlan.id);
+        const planLimits = await planLimitsService.getPlanLimits(userPlan.id);
         planLimitsMap = planLimits.reduce((acc, limit) => {
           acc[limit.featureSlug] = limit.maxLimit;
           return acc;
@@ -62,29 +69,37 @@ class PermissionResolutionService {
       }
 
       // Step 4: Load user's roles in organization
-      const userRoles = await userRolesService.getUserRoles(userId, organizationId);
-      
+      const userRoles = await userRolesService.getUserRoles(
+        userId,
+        organizationId
+      );
+
       // Step 5: Load role permissions (aggregate from all roles)
       const rolePermissionsSet = new Set();
       for (const role of userRoles) {
-        const permissions = await rolePermissionsService.getRolePermissions(role.id);
-        permissions.forEach(slug => rolePermissionsSet.add(slug));
+        const permissions = await rolePermissionsService.getRolePermissions(
+          role.id
+        );
+        permissions.forEach((slug) => rolePermissionsSet.add(slug));
       }
       const rolePermissions = Array.from(rolePermissionsSet);
 
       // Step 6: Load all overrides (user-level and org-level)
-      const userOverrides = await overridesService.getUserActiveOverrides(userId);
-      const orgOverrides = await overridesService.getOrganizationActiveOverrides(organizationId);
+      const userOverrides = await overridesService.getUserActiveOverrides(
+        userId
+      );
+      const orgOverrides =
+        await overridesService.getOrganizationActiveOverrides(organizationId);
 
       // Step 7: Build base permissions from plan
       const basePermissions = {};
-      planFeatures.forEach(feature => {
+      planFeatures.forEach((feature) => {
         basePermissions[feature.slug] = feature.enabled;
       });
 
       // Step 8: Apply role permissions (union - roles can only grant, not deny)
       // Roles refine plan by granting additional permissions
-      rolePermissions.forEach(slug => {
+      rolePermissions.forEach((slug) => {
         if (!(slug in basePermissions)) {
           basePermissions[slug] = true; // Role grants new permission
         }
@@ -100,23 +115,29 @@ class PermissionResolutionService {
       const finalLimits = { ...planLimitsMap };
 
       // Apply org-level overrides first
-      orgOverrides.forEach(override => {
-        if (override.overrideType === 'feature_enable') {
+      orgOverrides.forEach((override) => {
+        if (override.overrideType === "feature_enable") {
           finalPermissions[override.featureSlug] = true;
-        } else if (override.overrideType === 'feature_disable') {
+        } else if (override.overrideType === "feature_disable") {
           finalPermissions[override.featureSlug] = false;
-        } else if (override.overrideType === 'limit_increase' && override.value !== null) {
+        } else if (
+          override.overrideType === "limit_increase" &&
+          override.value !== null
+        ) {
           finalLimits[override.featureSlug] = override.value;
         }
       });
 
       // Apply user-level overrides (highest priority)
-      userOverrides.forEach(override => {
-        if (override.overrideType === 'feature_enable') {
+      userOverrides.forEach((override) => {
+        if (override.overrideType === "feature_enable") {
           finalPermissions[override.featureSlug] = true;
-        } else if (override.overrideType === 'feature_disable') {
+        } else if (override.overrideType === "feature_disable") {
           finalPermissions[override.featureSlug] = false;
-        } else if (override.overrideType === 'limit_increase' && override.value !== null) {
+        } else if (
+          override.overrideType === "limit_increase" &&
+          override.value !== null
+        ) {
           finalLimits[override.featureSlug] = override.value;
         }
       });
@@ -125,30 +146,33 @@ class PermissionResolutionService {
       const usageMap = {};
       try {
         // Import usage service
-        const usageServiceModule = await import('./usage.service.js');
+        const usageServiceModule = await import("./usage.service.js");
         const usageService = usageServiceModule.default;
-        
-        if (usageService && typeof usageService.getUsage === 'function') {
+
+        if (usageService && typeof usageService.getUsage === "function") {
           // Get usage for all features with limits
           for (const featureSlug of Object.keys(finalLimits)) {
             try {
               const usage = await usageService.getUsage(userId, featureSlug);
               usageMap[featureSlug] = usage || 0;
             } catch (error) {
-              logger.warn({ error, userId, featureSlug }, 'Failed to get usage, defaulting to 0');
+              logger.warn(
+                { error, userId, featureSlug },
+                "Failed to get usage, defaulting to 0"
+              );
               usageMap[featureSlug] = 0;
             }
           }
         } else {
           // Usage service not fully implemented - default to 0
-          Object.keys(finalLimits).forEach(featureSlug => {
+          Object.keys(finalLimits).forEach((featureSlug) => {
             usageMap[featureSlug] = 0;
           });
         }
       } catch (error) {
         // Usage service not available - default to 0
-        logger.debug('Usage service not available, defaulting usage to 0');
-        Object.keys(finalLimits).forEach(featureSlug => {
+        logger.debug("Usage service not available, defaulting usage to 0");
+        Object.keys(finalLimits).forEach((featureSlug) => {
           usageMap[featureSlug] = 0;
         });
       }
@@ -158,35 +182,41 @@ class PermissionResolutionService {
       const limits = {};
 
       // Build features map
-      Object.keys(finalPermissions).forEach(slug => {
+      Object.keys(finalPermissions).forEach((slug) => {
         features[slug] = finalPermissions[slug];
       });
 
       // Build limits map with usage
-      Object.keys(finalLimits).forEach(slug => {
+      Object.keys(finalLimits).forEach((slug) => {
         const max = finalLimits[slug];
         const used = usageMap[slug] || 0;
         limits[slug] = {
           max,
           used,
-          remaining: Math.max(0, max - used)
+          remaining: Math.max(0, max - used),
         };
       });
 
       const permissionMap = {
         features,
         limits,
-        resolvedAt: new Date().toISOString()
+        resolvedAt: new Date().toISOString(),
       };
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, permissionMap, CACHE_TTL.PERMISSIONS);
 
-      logger.debug({ userId, organizationId, featureCount: Object.keys(features).length }, 'Permissions resolved');
+      logger.debug(
+        { userId, organizationId, featureCount: Object.keys(features).length },
+        "Permissions resolved"
+      );
 
       return permissionMap;
     } catch (error) {
-      logger.error({ error, userId, organizationId }, 'Failed to resolve permissions');
+      logger.error(
+        { error, userId, organizationId },
+        "Failed to resolve permissions"
+      );
       throw error;
     }
   }

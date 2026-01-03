@@ -3,6 +3,7 @@ import db from "../config/db.js";
 import { planFeatures } from "../models/plan-features.model.js";
 import { features } from "../models/features.model.js";
 import { planLimits } from "../models/plan-limits.model.js";
+import { userPlans } from "../models/user-plans.model.js";
 import logger from "../utilities/logger.js";
 import {
   NotFoundError,
@@ -12,6 +13,7 @@ import {
 import cacheService from "./cache.service.js";
 import cacheKeys from "../utilities/cache-keys.js";
 import { CACHE_TTL } from "../utilities/cache-keys.js";
+import plansService from "./plans.service.js";
 
 /**
  * PlanFeaturesService - Handles feature assignments to plans
@@ -84,6 +86,18 @@ class PlanFeaturesService {
 
       // Invalidate caches
       await cacheService.del(cacheKeys.planFeatures(planId));
+
+      // Also invalidate orgPlans cache since it contains featuresCount
+      const plan = await plansService.getPlan(planId);
+      if (plan) {
+        await cacheService.del(cacheKeys.orgPlans(plan.organizationId));
+
+        // Invalidate permission caches for all users with this plan
+        await this._invalidateUserPermissionCachesForPlan(
+          planId,
+          plan.organizationId
+        );
+      }
 
       return { success: true };
     } catch (error) {
@@ -164,6 +178,18 @@ class PlanFeaturesService {
       // Invalidate caches
       await cacheService.del(cacheKeys.planFeatures(planId));
       await cacheService.del(cacheKeys.planLimits(planId));
+
+      // Also invalidate orgPlans cache since it contains featuresCount
+      const plan = await plansService.getPlan(planId);
+      if (plan) {
+        await cacheService.del(cacheKeys.orgPlans(plan.organizationId));
+
+        // Invalidate permission caches for all users with this plan
+        await this._invalidateUserPermissionCachesForPlan(
+          planId,
+          plan.organizationId
+        );
+      }
 
       logger.info(
         { planId, featureId, featureSlug: feature.slug },
@@ -381,6 +407,47 @@ class PlanFeaturesService {
         "Failed to check if feature is enabled in plan"
       );
       return false;
+    }
+  }
+
+  /**
+   * Invalidate permission caches for all users with a specific plan
+   * @private
+   * @param {number} planId - Plan ID
+   * @param {number} organizationId - Organization ID
+   */
+  async _invalidateUserPermissionCachesForPlan(planId, organizationId) {
+    try {
+      // Find all users with this plan
+      const usersWithPlan = await db
+        .select({ userId: userPlans.userId })
+        .from(userPlans)
+        .where(
+          and(
+            eq(userPlans.planId, planId),
+            eq(userPlans.organizationId, organizationId)
+          )
+        );
+
+      // Invalidate each user's permission cache
+      for (const { userId } of usersWithPlan) {
+        await cacheService.del(
+          cacheKeys.userPermissions(String(userId), organizationId)
+        );
+      }
+
+      if (usersWithPlan.length > 0) {
+        logger.info(
+          { planId, organizationId, userCount: usersWithPlan.length },
+          "Invalidated permission caches for users with plan"
+        );
+      }
+    } catch (error) {
+      logger.error(
+        { error, planId, organizationId },
+        "Failed to invalidate user permission caches for plan"
+      );
+      // Don't throw - this is a best-effort cleanup
     }
   }
 }

@@ -68,6 +68,8 @@ export const API_KEY_SCOPES = {
   USAGE_READ: "usage:read",
   USAGE_WRITE: "usage:write",
   USERS_SYNC: "users:sync",
+  PLANS_WRITE: "plans:write", // Assign/remove plans
+  ROLES_WRITE: "roles:write", // Assign/remove roles
 };
 
 /**

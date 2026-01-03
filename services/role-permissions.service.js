@@ -1,12 +1,13 @@
-import { eq, and, inArray } from 'drizzle-orm';
-import db from '../config/db.js';
-import { rolePermissions } from '../models/role-permissions.model.js';
-import logger from '../utilities/logger.js';
-import { NotFoundError, ValidationError } from '../utilities/errors.js';
-import cacheService from './cache.service.js';
-import cacheKeys from '../utilities/cache-keys.js';
-import { CACHE_TTL } from '../utilities/cache-keys.js';
-import rolesService from './roles.service.js';
+import { eq, and, inArray } from "drizzle-orm";
+import db from "../config/db.js";
+import { rolePermissions } from "../models/role-permissions.model.js";
+import { userRoles } from "../models/user-roles.model.js";
+import logger from "../utilities/logger.js";
+import { NotFoundError, ValidationError } from "../utilities/errors.js";
+import cacheService from "./cache.service.js";
+import cacheKeys from "../utilities/cache-keys.js";
+import { CACHE_TTL } from "../utilities/cache-keys.js";
+import rolesService from "./roles.service.js";
 
 /**
  * RolePermissionsService - Handles role permission management
@@ -22,22 +23,25 @@ class RolePermissionsService {
    */
   async grantPermissionToRole(roleId, featureSlug) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     if (!featureSlug || featureSlug.trim().length === 0) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     // Verify role exists
     const role = await rolesService.getRole(roleId);
     if (!role) {
-      throw new NotFoundError('Role not found');
+      throw new NotFoundError("Role not found");
     }
 
-    // Verify feature exists (import here to avoid circular dependency)
-    const featuresService = (await import('./features.service.js')).default;
-    const feature = await featuresService.getFeatureBySlug(featureSlug);
+    // Verify feature exists in this organization (import here to avoid circular dependency)
+    const featuresService = (await import("./features.service.js")).default;
+    const feature = await featuresService.getFeatureBySlug(
+      role.organizationId,
+      featureSlug
+    );
     if (!feature) {
       throw new NotFoundError(`Feature with slug '${featureSlug}' not found`);
     }
@@ -49,17 +53,27 @@ class RolePermissionsService {
         .values({
           roleId,
           featureSlug: featureSlug.toLowerCase(),
-          granted: true
+          granted: true,
         })
         .onConflictDoNothing();
 
       // Invalidate cache
       await cacheService.del(cacheKeys.rolePermissions(roleId));
 
-      logger.info({ roleId, featureSlug }, 'Permission granted to role');
+      // Invalidate permission caches for all users with this role
+      await this._invalidateUserPermissionCachesForRole(
+        roleId,
+        role.organizationId
+      );
+
+      logger.info({ roleId, featureSlug }, "Permission granted to role");
     } catch (error) {
-      logger.error({ error, roleId, featureSlug }, 'Failed to grant permission');
-      if (error.code !== '23505') { // Ignore unique constraint violations (idempotent)
+      logger.error(
+        { error, roleId, featureSlug },
+        "Failed to grant permission"
+      );
+      if (error.code !== "23505") {
+        // Ignore unique constraint violations (idempotent)
         throw error;
       }
     }
@@ -73,17 +87,17 @@ class RolePermissionsService {
    */
   async revokePermissionFromRole(roleId, featureSlug) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     if (!featureSlug || featureSlug.trim().length === 0) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     // Verify role exists
     const role = await rolesService.getRole(roleId);
     if (!role) {
-      throw new NotFoundError('Role not found');
+      throw new NotFoundError("Role not found");
     }
 
     try {
@@ -99,9 +113,18 @@ class RolePermissionsService {
       // Invalidate cache
       await cacheService.del(cacheKeys.rolePermissions(roleId));
 
-      logger.info({ roleId, featureSlug }, 'Permission revoked from role');
+      // Invalidate permission caches for all users with this role
+      await this._invalidateUserPermissionCachesForRole(
+        roleId,
+        role.organizationId
+      );
+
+      logger.info({ roleId, featureSlug }, "Permission revoked from role");
     } catch (error) {
-      logger.error({ error, roleId, featureSlug }, 'Failed to revoke permission');
+      logger.error(
+        { error, roleId, featureSlug },
+        "Failed to revoke permission"
+      );
       throw error;
     }
   }
@@ -113,7 +136,7 @@ class RolePermissionsService {
    */
   async getRolePermissions(roleId) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     const cacheKey = cacheKeys.rolePermissions(roleId);
@@ -122,13 +145,13 @@ class RolePermissionsService {
       // Try cache first
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug({ roleId }, 'Role permissions retrieved from cache');
+        logger.debug({ roleId }, "Role permissions retrieved from cache");
         return cached;
       }
 
       const permissions = await db
         .select({
-          featureSlug: rolePermissions.featureSlug
+          featureSlug: rolePermissions.featureSlug,
         })
         .from(rolePermissions)
         .where(
@@ -138,14 +161,14 @@ class RolePermissionsService {
           )
         );
 
-      const featureSlugs = permissions.map(p => p.featureSlug);
+      const featureSlugs = permissions.map((p) => p.featureSlug);
 
       // Cache for 1 hour
       await cacheService.set(cacheKey, featureSlugs, CACHE_TTL.PLAN_ROLE_DATA);
 
       return featureSlugs;
     } catch (error) {
-      logger.error({ error, roleId }, 'Failed to get role permissions');
+      logger.error({ error, roleId }, "Failed to get role permissions");
       throw error;
     }
   }
@@ -161,7 +184,9 @@ class RolePermissionsService {
       return false;
     }
 
-    const cacheKey = `${cacheKeys.rolePermissions(roleId)}:check:${featureSlug}`;
+    const cacheKey = `${cacheKeys.rolePermissions(
+      roleId
+    )}:check:${featureSlug}`;
 
     try {
       // Try cache first
@@ -189,7 +214,10 @@ class RolePermissionsService {
 
       return hasPermission;
     } catch (error) {
-      logger.error({ error, roleId, featureSlug }, 'Failed to check role permission');
+      logger.error(
+        { error, roleId, featureSlug },
+        "Failed to check role permission"
+      );
       return false;
     }
   }
@@ -202,23 +230,28 @@ class RolePermissionsService {
    */
   async grantMultiplePermissions(roleId, featureSlugs) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     if (!Array.isArray(featureSlugs) || featureSlugs.length === 0) {
-      throw new ValidationError('Feature slugs array is required and cannot be empty');
+      throw new ValidationError(
+        "Feature slugs array is required and cannot be empty"
+      );
     }
 
     // Verify role exists
     const role = await rolesService.getRole(roleId);
     if (!role) {
-      throw new NotFoundError('Role not found');
+      throw new NotFoundError("Role not found");
     }
 
-    // Verify all features exist
-    const featuresService = (await import('./features.service.js')).default;
+    // Verify all features exist in this organization
+    const featuresService = (await import("./features.service.js")).default;
     for (const slug of featureSlugs) {
-      const feature = await featuresService.getFeatureBySlug(slug);
+      const feature = await featuresService.getFeatureBySlug(
+        role.organizationId,
+        slug
+      );
       if (!feature) {
         throw new NotFoundError(`Feature with slug '${slug}' not found`);
       }
@@ -226,23 +259,32 @@ class RolePermissionsService {
 
     try {
       // Insert multiple permissions
-      const values = featureSlugs.map(slug => ({
+      const values = featureSlugs.map((slug) => ({
         roleId,
         featureSlug: slug.toLowerCase(),
-        granted: true
+        granted: true,
       }));
 
-      await db
-        .insert(rolePermissions)
-        .values(values)
-        .onConflictDoNothing();
+      await db.insert(rolePermissions).values(values).onConflictDoNothing();
 
       // Invalidate cache
       await cacheService.del(cacheKeys.rolePermissions(roleId));
 
-      logger.info({ roleId, count: featureSlugs.length }, 'Multiple permissions granted to role');
+      // Invalidate permission caches for all users with this role
+      await this._invalidateUserPermissionCachesForRole(
+        roleId,
+        role.organizationId
+      );
+
+      logger.info(
+        { roleId, count: featureSlugs.length },
+        "Multiple permissions granted to role"
+      );
     } catch (error) {
-      logger.error({ error, roleId, featureSlugs }, 'Failed to grant multiple permissions');
+      logger.error(
+        { error, roleId, featureSlugs },
+        "Failed to grant multiple permissions"
+      );
       throw error;
     }
   }
@@ -255,23 +297,25 @@ class RolePermissionsService {
    */
   async revokeMultiplePermissions(roleId, featureSlugs) {
     if (!roleId) {
-      throw new ValidationError('Role ID is required');
+      throw new ValidationError("Role ID is required");
     }
 
     if (!Array.isArray(featureSlugs) || featureSlugs.length === 0) {
-      throw new ValidationError('Feature slugs array is required and cannot be empty');
+      throw new ValidationError(
+        "Feature slugs array is required and cannot be empty"
+      );
     }
 
     // Verify role exists
     const role = await rolesService.getRole(roleId);
     if (!role) {
-      throw new NotFoundError('Role not found');
+      throw new NotFoundError("Role not found");
     }
 
     try {
       // Delete multiple permissions
-      const normalizedSlugs = featureSlugs.map(slug => slug.toLowerCase());
-      
+      const normalizedSlugs = featureSlugs.map((slug) => slug.toLowerCase());
+
       await db
         .delete(rolePermissions)
         .where(
@@ -284,14 +328,66 @@ class RolePermissionsService {
       // Invalidate cache
       await cacheService.del(cacheKeys.rolePermissions(roleId));
 
-      logger.info({ roleId, count: featureSlugs.length }, 'Multiple permissions revoked from role');
+      // Invalidate permission caches for all users with this role
+      await this._invalidateUserPermissionCachesForRole(
+        roleId,
+        role.organizationId
+      );
+
+      logger.info(
+        { roleId, count: featureSlugs.length },
+        "Multiple permissions revoked from role"
+      );
     } catch (error) {
-      logger.error({ error, roleId, featureSlugs }, 'Failed to revoke multiple permissions');
+      logger.error(
+        { error, roleId, featureSlugs },
+        "Failed to revoke multiple permissions"
+      );
       throw error;
+    }
+  }
+
+  /**
+   * Invalidate permission caches for all users with a specific role
+   * @private
+   * @param {number} roleId - Role ID
+   * @param {number} organizationId - Organization ID
+   */
+  async _invalidateUserPermissionCachesForRole(roleId, organizationId) {
+    try {
+      // Find all users with this role
+      const usersWithRole = await db
+        .select({ userId: userRoles.userId })
+        .from(userRoles)
+        .where(
+          and(
+            eq(userRoles.roleId, roleId),
+            eq(userRoles.organizationId, organizationId)
+          )
+        );
+
+      // Invalidate each user's permission cache
+      for (const { userId } of usersWithRole) {
+        await cacheService.del(
+          cacheKeys.userPermissions(String(userId), organizationId)
+        );
+      }
+
+      if (usersWithRole.length > 0) {
+        logger.info(
+          { roleId, organizationId, userCount: usersWithRole.length },
+          "Invalidated permission caches for users with role"
+        );
+      }
+    } catch (error) {
+      logger.error(
+        { error, roleId, organizationId },
+        "Failed to invalidate user permission caches for role"
+      );
+      // Don't throw - this is a best-effort cleanup
     }
   }
 }
 
 const rolePermissionsService = new RolePermissionsService();
 export default rolePermissionsService;
-

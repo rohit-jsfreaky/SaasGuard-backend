@@ -1,13 +1,14 @@
-import { eq, and, or, isNull, lt, gte, desc, sql } from 'drizzle-orm';
-import db from '../config/db.js';
-import { overrides } from '../models/overrides.model.js';
-import logger from '../utilities/logger.js';
-import { NotFoundError, ValidationError } from '../utilities/errors.js';
-import cacheService from './cache.service.js';
-import cacheKeys from '../utilities/cache-keys.js';
-import { CACHE_TTL } from '../utilities/cache-keys.js';
-import usersService from './users.service.js';
-import organizationsService from './organizations.service.js';
+import { eq, and, or, isNull, lt, gte, desc, sql, inArray } from "drizzle-orm";
+import db from "../config/db.js";
+import { overrides } from "../models/overrides.model.js";
+import { users } from "../models/users.model.js";
+import logger from "../utilities/logger.js";
+import { NotFoundError, ValidationError } from "../utilities/errors.js";
+import cacheService from "./cache.service.js";
+import cacheKeys from "../utilities/cache-keys.js";
+import { CACHE_TTL } from "../utilities/cache-keys.js";
+import usersService from "./users.service.js";
+import organizationsService from "./organizations.service.js";
 
 /**
  * OverridesService - Handles all override-related database operations
@@ -26,48 +27,72 @@ class OverridesService {
    * @param {number} createdBy - User ID who created the override
    * @returns {Promise<Object>} Override object
    */
-  async createUserOverride(userId, featureSlug, overrideType, value = null, expiresAt = null, reason = null, createdBy) {
+  async createUserOverride(
+    userId,
+    featureSlug,
+    overrideType,
+    value = null,
+    expiresAt = null,
+    reason = null,
+    createdBy
+  ) {
     if (!userId) {
-      throw new ValidationError('User ID is required');
+      throw new ValidationError("User ID is required");
     }
 
     if (!featureSlug || featureSlug.trim().length === 0) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     if (!overrideType) {
-      throw new ValidationError('Override type is required');
+      throw new ValidationError("Override type is required");
     }
 
     if (!createdBy) {
-      throw new ValidationError('Created by user ID is required');
+      throw new ValidationError("Created by user ID is required");
     }
 
     // Validate override type
-    const validTypes = ['feature_enable', 'feature_disable', 'limit_increase'];
+    const validTypes = ["feature_enable", "feature_disable", "limit_increase"];
     if (!validTypes.includes(overrideType)) {
-      throw new ValidationError(`Invalid override type. Must be one of: ${validTypes.join(', ')}`);
+      throw new ValidationError(
+        `Invalid override type. Must be one of: ${validTypes.join(", ")}`
+      );
     }
 
     // Validate value for limit_increase
-    if (overrideType === 'limit_increase' && (value === null || value === undefined || value <= 0)) {
-      throw new ValidationError('Value is required and must be positive for limit_increase');
+    if (
+      overrideType === "limit_increase" &&
+      (value === null || value === undefined || value <= 0)
+    ) {
+      throw new ValidationError(
+        "Value is required and must be positive for limit_increase"
+      );
     }
 
     // Validate value is null for feature toggles
-    if ((overrideType === 'feature_enable' || overrideType === 'feature_disable') && value !== null) {
-      throw new ValidationError('Value must be null for feature enable/disable overrides');
+    if (
+      (overrideType === "feature_enable" ||
+        overrideType === "feature_disable") &&
+      value !== null
+    ) {
+      throw new ValidationError(
+        "Value must be null for feature enable/disable overrides"
+      );
     }
 
     // Verify user exists
     const user = await usersService.getUserById(userId);
     if (!user) {
-      throw new NotFoundError('User not found');
+      throw new NotFoundError("User not found");
     }
 
-    // Verify feature exists
-    const featuresService = (await import('./features.service.js')).default;
-    const feature = await featuresService.getFeatureBySlug(featureSlug);
+    // Verify feature exists in user's organization
+    const featuresService = (await import("./features.service.js")).default;
+    const feature = await featuresService.getFeatureBySlug(
+      user.organizationId,
+      featureSlug
+    );
     if (!feature) {
       throw new NotFoundError(`Feature with slug '${featureSlug}' not found`);
     }
@@ -83,18 +108,24 @@ class OverridesService {
           value: value ? BigInt(value) : null,
           expiresAt: expiresAt ? new Date(expiresAt) : null,
           reason: reason ? reason.trim() : null,
-          createdBy
+          createdBy,
         })
         .returning();
 
       // Invalidate user override cache
       await cacheService.del(cacheKeys.userOverrides(String(userId)));
 
-      logger.info({ overrideId: newOverride.id, userId, featureSlug, overrideType }, 'User override created');
+      logger.info(
+        { overrideId: newOverride.id, userId, featureSlug, overrideType },
+        "User override created"
+      );
 
       return this._formatOverride(newOverride);
     } catch (error) {
-      logger.error({ error, userId, featureSlug, overrideType }, 'Failed to create user override');
+      logger.error(
+        { error, userId, featureSlug, overrideType },
+        "Failed to create user override"
+      );
       throw error;
     }
   }
@@ -110,48 +141,72 @@ class OverridesService {
    * @param {number} createdBy - User ID who created the override
    * @returns {Promise<Object>} Override object
    */
-  async createOrganizationOverride(organizationId, featureSlug, overrideType, value = null, expiresAt = null, reason = null, createdBy) {
+  async createOrganizationOverride(
+    organizationId,
+    featureSlug,
+    overrideType,
+    value = null,
+    expiresAt = null,
+    reason = null,
+    createdBy
+  ) {
     if (!organizationId) {
-      throw new ValidationError('Organization ID is required');
+      throw new ValidationError("Organization ID is required");
     }
 
     if (!featureSlug || featureSlug.trim().length === 0) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     if (!overrideType) {
-      throw new ValidationError('Override type is required');
+      throw new ValidationError("Override type is required");
     }
 
     if (!createdBy) {
-      throw new ValidationError('Created by user ID is required');
+      throw new ValidationError("Created by user ID is required");
     }
 
     // Validate override type
-    const validTypes = ['feature_enable', 'feature_disable', 'limit_increase'];
+    const validTypes = ["feature_enable", "feature_disable", "limit_increase"];
     if (!validTypes.includes(overrideType)) {
-      throw new ValidationError(`Invalid override type. Must be one of: ${validTypes.join(', ')}`);
+      throw new ValidationError(
+        `Invalid override type. Must be one of: ${validTypes.join(", ")}`
+      );
     }
 
     // Validate value for limit_increase
-    if (overrideType === 'limit_increase' && (value === null || value === undefined || value <= 0)) {
-      throw new ValidationError('Value is required and must be positive for limit_increase');
+    if (
+      overrideType === "limit_increase" &&
+      (value === null || value === undefined || value <= 0)
+    ) {
+      throw new ValidationError(
+        "Value is required and must be positive for limit_increase"
+      );
     }
 
     // Validate value is null for feature toggles
-    if ((overrideType === 'feature_enable' || overrideType === 'feature_disable') && value !== null) {
-      throw new ValidationError('Value must be null for feature enable/disable overrides');
+    if (
+      (overrideType === "feature_enable" ||
+        overrideType === "feature_disable") &&
+      value !== null
+    ) {
+      throw new ValidationError(
+        "Value must be null for feature enable/disable overrides"
+      );
     }
 
     // Verify organization exists
     const org = await organizationsService.getOrganization(organizationId);
     if (!org) {
-      throw new NotFoundError('Organization not found');
+      throw new NotFoundError("Organization not found");
     }
 
-    // Verify feature exists
-    const featuresService = (await import('./features.service.js')).default;
-    const feature = await featuresService.getFeatureBySlug(featureSlug);
+    // Verify feature exists in this organization
+    const featuresService = (await import("./features.service.js")).default;
+    const feature = await featuresService.getFeatureBySlug(
+      organizationId,
+      featureSlug
+    );
     if (!feature) {
       throw new NotFoundError(`Feature with slug '${featureSlug}' not found`);
     }
@@ -167,18 +222,29 @@ class OverridesService {
           value: value ? BigInt(value) : null,
           expiresAt: expiresAt ? new Date(expiresAt) : null,
           reason: reason ? reason.trim() : null,
-          createdBy
+          createdBy,
         })
         .returning();
 
       // Invalidate org override cache
       await cacheService.del(cacheKeys.orgOverrides(organizationId));
 
-      logger.info({ overrideId: newOverride.id, organizationId, featureSlug, overrideType }, 'Organization override created');
+      logger.info(
+        {
+          overrideId: newOverride.id,
+          organizationId,
+          featureSlug,
+          overrideType,
+        },
+        "Organization override created"
+      );
 
       return this._formatOverride(newOverride);
     } catch (error) {
-      logger.error({ error, organizationId, featureSlug, overrideType }, 'Failed to create organization override');
+      logger.error(
+        { error, organizationId, featureSlug, overrideType },
+        "Failed to create organization override"
+      );
       throw error;
     }
   }
@@ -190,7 +256,7 @@ class OverridesService {
    */
   async getUserActiveOverrides(userId) {
     if (!userId) {
-      throw new ValidationError('User ID is required');
+      throw new ValidationError("User ID is required");
     }
 
     const cacheKey = cacheKeys.userOverrides(String(userId));
@@ -199,7 +265,7 @@ class OverridesService {
       // Try cache first
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug({ userId }, 'User active overrides retrieved from cache');
+        logger.debug({ userId }, "User active overrides retrieved from cache");
         return cached;
       }
 
@@ -210,22 +276,21 @@ class OverridesService {
         .where(
           and(
             eq(overrides.userId, userId),
-            or(
-              isNull(overrides.expiresAt),
-              gte(overrides.expiresAt, now)
-            )
+            or(isNull(overrides.expiresAt), gte(overrides.expiresAt, now))
           )
         )
         .orderBy(desc(overrides.createdAt));
 
-      const formatted = overrideList.map(override => this._formatOverride(override));
+      const formatted = overrideList.map((override) =>
+        this._formatOverride(override)
+      );
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, formatted, CACHE_TTL.PERMISSIONS);
 
       return formatted;
     } catch (error) {
-      logger.error({ error, userId }, 'Failed to get user active overrides');
+      logger.error({ error, userId }, "Failed to get user active overrides");
       throw error;
     }
   }
@@ -237,7 +302,7 @@ class OverridesService {
    */
   async getOrganizationActiveOverrides(orgId) {
     if (!orgId) {
-      throw new ValidationError('Organization ID is required');
+      throw new ValidationError("Organization ID is required");
     }
 
     const cacheKey = cacheKeys.orgOverrides(orgId);
@@ -246,7 +311,10 @@ class OverridesService {
       // Try cache first
       const cached = await cacheService.get(cacheKey);
       if (cached) {
-        logger.debug({ orgId }, 'Organization active overrides retrieved from cache');
+        logger.debug(
+          { orgId },
+          "Organization active overrides retrieved from cache"
+        );
         return cached;
       }
 
@@ -257,22 +325,24 @@ class OverridesService {
         .where(
           and(
             eq(overrides.organizationId, orgId),
-            or(
-              isNull(overrides.expiresAt),
-              gte(overrides.expiresAt, now)
-            )
+            or(isNull(overrides.expiresAt), gte(overrides.expiresAt, now))
           )
         )
         .orderBy(desc(overrides.createdAt));
 
-      const formatted = overrideList.map(override => this._formatOverride(override));
+      const formatted = overrideList.map((override) =>
+        this._formatOverride(override)
+      );
 
       // Cache for 5 minutes
       await cacheService.set(cacheKey, formatted, CACHE_TTL.PERMISSIONS);
 
       return formatted;
     } catch (error) {
-      logger.error({ error, orgId }, 'Failed to get organization active overrides');
+      logger.error(
+        { error, orgId },
+        "Failed to get organization active overrides"
+      );
       throw error;
     }
   }
@@ -288,7 +358,9 @@ class OverridesService {
       return null;
     }
 
-    const cacheKey = `${cacheKeys.userOverrides(String(userId))}:feature:${featureSlug}`;
+    const cacheKey = `${cacheKeys.userOverrides(
+      String(userId)
+    )}:feature:${featureSlug}`;
 
     try {
       // Try cache first
@@ -305,10 +377,7 @@ class OverridesService {
           and(
             eq(overrides.userId, userId),
             eq(overrides.featureSlug, featureSlug.toLowerCase()),
-            or(
-              isNull(overrides.expiresAt),
-              gte(overrides.expiresAt, now)
-            )
+            or(isNull(overrides.expiresAt), gte(overrides.expiresAt, now))
           )
         )
         .limit(1);
@@ -320,7 +389,10 @@ class OverridesService {
 
       return result;
     } catch (error) {
-      logger.error({ error, userId, featureSlug }, 'Failed to get user override for feature');
+      logger.error(
+        { error, userId, featureSlug },
+        "Failed to get user override for feature"
+      );
       return null;
     }
   }
@@ -353,10 +425,7 @@ class OverridesService {
           and(
             eq(overrides.organizationId, orgId),
             eq(overrides.featureSlug, featureSlug.toLowerCase()),
-            or(
-              isNull(overrides.expiresAt),
-              gte(overrides.expiresAt, now)
-            )
+            or(isNull(overrides.expiresAt), gte(overrides.expiresAt, now))
           )
         )
         .limit(1);
@@ -368,7 +437,10 @@ class OverridesService {
 
       return result;
     } catch (error) {
-      logger.error({ error, orgId, featureSlug }, 'Failed to get organization override for feature');
+      logger.error(
+        { error, orgId, featureSlug },
+        "Failed to get organization override for feature"
+      );
       return null;
     }
   }
@@ -381,31 +453,44 @@ class OverridesService {
    */
   async updateOverride(overrideId, updates) {
     if (!overrideId) {
-      throw new ValidationError('Override ID is required');
+      throw new ValidationError("Override ID is required");
     }
 
     // Check if override exists
     const existing = await this.getOverrideById(overrideId);
     if (!existing) {
-      throw new NotFoundError('Override not found');
+      throw new NotFoundError("Override not found");
     }
 
     const updateData = {
-      updatedAt: new Date()
+      updatedAt: new Date(),
     };
 
     if (updates.value !== undefined) {
-      if (existing.overrideType === 'limit_increase' && (updates.value === null || updates.value <= 0)) {
-        throw new ValidationError('Value is required and must be positive for limit_increase');
+      if (
+        existing.overrideType === "limit_increase" &&
+        (updates.value === null || updates.value <= 0)
+      ) {
+        throw new ValidationError(
+          "Value is required and must be positive for limit_increase"
+        );
       }
-      if ((existing.overrideType === 'feature_enable' || existing.overrideType === 'feature_disable') && updates.value !== null) {
-        throw new ValidationError('Value must be null for feature enable/disable overrides');
+      if (
+        (existing.overrideType === "feature_enable" ||
+          existing.overrideType === "feature_disable") &&
+        updates.value !== null
+      ) {
+        throw new ValidationError(
+          "Value must be null for feature enable/disable overrides"
+        );
       }
       updateData.value = updates.value ? BigInt(updates.value) : null;
     }
 
     if (updates.expiresAt !== undefined) {
-      updateData.expiresAt = updates.expiresAt ? new Date(updates.expiresAt) : null;
+      updateData.expiresAt = updates.expiresAt
+        ? new Date(updates.expiresAt)
+        : null;
     }
 
     if (updates.reason !== undefined) {
@@ -422,11 +507,11 @@ class OverridesService {
       // Invalidate caches
       await this._invalidateOverrideCaches(updated);
 
-      logger.info({ overrideId }, 'Override updated');
+      logger.info({ overrideId }, "Override updated");
 
       return this._formatOverride(updated);
     } catch (error) {
-      logger.error({ error, overrideId }, 'Failed to update override');
+      logger.error({ error, overrideId }, "Failed to update override");
       throw error;
     }
   }
@@ -438,26 +523,24 @@ class OverridesService {
    */
   async deleteOverride(overrideId) {
     if (!overrideId) {
-      throw new ValidationError('Override ID is required');
+      throw new ValidationError("Override ID is required");
     }
 
     // Get override before deletion for cache invalidation
     const override = await this.getOverrideById(overrideId);
     if (!override) {
-      throw new NotFoundError('Override not found');
+      throw new NotFoundError("Override not found");
     }
 
     try {
-      await db
-        .delete(overrides)
-        .where(eq(overrides.id, overrideId));
+      await db.delete(overrides).where(eq(overrides.id, overrideId));
 
       // Invalidate caches
       await this._invalidateOverrideCaches(override);
 
-      logger.info({ overrideId }, 'Override deleted');
+      logger.info({ overrideId }, "Override deleted");
     } catch (error) {
-      logger.error({ error, overrideId }, 'Failed to delete override');
+      logger.error({ error, overrideId }, "Failed to delete override");
       throw error;
     }
   }
@@ -469,12 +552,12 @@ class OverridesService {
    */
   async expireOverride(overrideId) {
     if (!overrideId) {
-      throw new ValidationError('Override ID is required');
+      throw new ValidationError("Override ID is required");
     }
 
     const override = await this.getOverrideById(overrideId);
     if (!override) {
-      throw new NotFoundError('Override not found');
+      throw new NotFoundError("Override not found");
     }
 
     try {
@@ -482,7 +565,7 @@ class OverridesService {
         .update(overrides)
         .set({
           expiresAt: new Date(),
-          updatedAt: new Date()
+          updatedAt: new Date(),
         })
         .where(eq(overrides.id, overrideId))
         .returning();
@@ -490,11 +573,11 @@ class OverridesService {
       // Invalidate caches
       await this._invalidateOverrideCaches(updated);
 
-      logger.info({ overrideId }, 'Override expired');
+      logger.info({ overrideId }, "Override expired");
 
       return this._formatOverride(updated);
     } catch (error) {
-      logger.error({ error, overrideId }, 'Failed to expire override');
+      logger.error({ error, overrideId }, "Failed to expire override");
       throw error;
     }
   }
@@ -508,7 +591,7 @@ class OverridesService {
    */
   async getOverridesForFeature(featureSlug, limit = 50, offset = 0) {
     if (!featureSlug) {
-      throw new ValidationError('Feature slug is required');
+      throw new ValidationError("Feature slug is required");
     }
 
     try {
@@ -530,14 +613,19 @@ class OverridesService {
         .offset(offset);
 
       return {
-        overrides: overrideList.map(override => this._formatOverride(override)),
+        overrides: overrideList.map((override) =>
+          this._formatOverride(override)
+        ),
         total,
         limit,
         offset,
-        hasMore: offset + limit < total
+        hasMore: offset + limit < total,
       };
     } catch (error) {
-      logger.error({ error, featureSlug }, 'Failed to get overrides for feature');
+      logger.error(
+        { error, featureSlug },
+        "Failed to get overrides for feature"
+      );
       throw error;
     }
   }
@@ -560,9 +648,9 @@ class OverridesService {
         )
         .orderBy(desc(overrides.expiresAt));
 
-      return expiredList.map(override => this._formatOverride(override));
+      return expiredList.map((override) => this._formatOverride(override));
     } catch (error) {
-      logger.error({ error }, 'Failed to get expired overrides');
+      logger.error({ error }, "Failed to get expired overrides");
       throw error;
     }
   }
@@ -584,20 +672,18 @@ class OverridesService {
       }
 
       // Delete expired overrides
-      await db
-        .delete(overrides)
-        .where(lt(overrides.expiresAt, now));
+      await db.delete(overrides).where(lt(overrides.expiresAt, now));
 
       // Invalidate all caches (batch operation)
       for (const override of expiredList) {
         await this._invalidateOverrideCaches(override);
       }
 
-      logger.info({ count: expiredList.length }, 'Expired overrides deleted');
+      logger.info({ count: expiredList.length }, "Expired overrides deleted");
 
       return expiredList.length;
     } catch (error) {
-      logger.error({ error }, 'Failed to delete expired overrides');
+      logger.error({ error }, "Failed to delete expired overrides");
       throw error;
     }
   }
@@ -611,11 +697,11 @@ class OverridesService {
    */
   async getUserOrganizationOverrides(userId, organizationId) {
     if (!userId) {
-      throw new ValidationError('User ID is required');
+      throw new ValidationError("User ID is required");
     }
 
     if (!organizationId) {
-      throw new ValidationError('Organization ID is required');
+      throw new ValidationError("Organization ID is required");
     }
 
     try {
@@ -628,10 +714,7 @@ class OverridesService {
         .where(
           and(
             eq(overrides.userId, userId),
-            or(
-              isNull(overrides.expiresAt),
-              gte(overrides.expiresAt, now)
-            )
+            or(isNull(overrides.expiresAt), gte(overrides.expiresAt, now))
           )
         );
 
@@ -642,19 +725,21 @@ class OverridesService {
         .where(
           and(
             eq(overrides.organizationId, organizationId),
-            or(
-              isNull(overrides.expiresAt),
-              gte(overrides.expiresAt, now)
-            )
+            or(isNull(overrides.expiresAt), gte(overrides.expiresAt, now))
           )
         );
 
       // Combine and format
-      const allOverrides = [...userOverrides, ...orgOverrides].map(override => this._formatOverride(override));
+      const allOverrides = [...userOverrides, ...orgOverrides].map((override) =>
+        this._formatOverride(override)
+      );
 
       return allOverrides;
     } catch (error) {
-      logger.error({ error, userId, organizationId }, 'Failed to get user organization overrides');
+      logger.error(
+        { error, userId, organizationId },
+        "Failed to get user organization overrides"
+      );
       throw error;
     }
   }
@@ -678,7 +763,7 @@ class OverridesService {
 
       return override ? this._formatOverride(override) : null;
     } catch (error) {
-      logger.error({ error, overrideId }, 'Failed to get override by ID');
+      logger.error({ error, overrideId }, "Failed to get override by ID");
       return null;
     }
   }
@@ -691,10 +776,10 @@ class OverridesService {
   async getAllOverrides(filters = {}) {
     const {
       featureSlug,
-      status = 'active', // 'active', 'expired', 'all'
+      status = "active", // 'active', 'expired', 'all'
       organizationId,
       limit = 50,
-      offset = 0
+      offset = 0,
     } = filters;
 
     try {
@@ -705,23 +790,40 @@ class OverridesService {
       }
 
       if (organizationId) {
-        conditions.push(eq(overrides.organizationId, organizationId));
+        // Include both:
+        // 1. Organization-level overrides (organizationId matches)
+        // 2. User-level overrides where the user belongs to this organization
+        const orgUserIds = await db
+          .select({ userId: users.id })
+          .from(users)
+          .where(eq(users.organizationId, organizationId));
+
+        const userIdsList = orgUserIds.map((u) => u.userId);
+
+        if (userIdsList.length > 0) {
+          conditions.push(
+            or(
+              eq(overrides.organizationId, organizationId),
+              inArray(overrides.userId, userIdsList)
+            )
+          );
+        } else {
+          conditions.push(eq(overrides.organizationId, organizationId));
+        }
       }
 
-      if (status === 'active') {
+      if (status === "active") {
         const now = new Date();
         conditions.push(
-          or(
-            isNull(overrides.expiresAt),
-            gte(overrides.expiresAt, now)
-          )
+          or(isNull(overrides.expiresAt), gte(overrides.expiresAt, now))
         );
-      } else if (status === 'expired') {
+      } else if (status === "expired") {
         const now = new Date();
         conditions.push(lt(overrides.expiresAt, now));
       }
 
-      const whereClause = conditions.length > 0 ? and(...conditions) : undefined;
+      const whereClause =
+        conditions.length > 0 ? and(...conditions) : undefined;
 
       // Get total count
       const totalResult = await db
@@ -741,14 +843,16 @@ class OverridesService {
         .offset(offset);
 
       return {
-        overrides: overrideList.map(override => this._formatOverride(override)),
+        overrides: overrideList.map((override) =>
+          this._formatOverride(override)
+        ),
         total,
         limit,
         offset,
-        hasMore: offset + limit < total
+        hasMore: offset + limit < total,
       };
     } catch (error) {
-      logger.error({ error, filters }, 'Failed to get all overrides');
+      logger.error({ error, filters }, "Failed to get all overrides");
       throw error;
     }
   }
@@ -761,12 +865,20 @@ class OverridesService {
   async _invalidateOverrideCaches(override) {
     if (override.userId) {
       await cacheService.del(cacheKeys.userOverrides(String(override.userId)));
-      await cacheService.del(`${cacheKeys.userOverrides(String(override.userId))}:feature:${override.featureSlug}`);
+      await cacheService.del(
+        `${cacheKeys.userOverrides(String(override.userId))}:feature:${
+          override.featureSlug
+        }`
+      );
     }
 
     if (override.organizationId) {
       await cacheService.del(cacheKeys.orgOverrides(override.organizationId));
-      await cacheService.del(`${cacheKeys.orgOverrides(override.organizationId)}:feature:${override.featureSlug}`);
+      await cacheService.del(
+        `${cacheKeys.orgOverrides(override.organizationId)}:feature:${
+          override.featureSlug
+        }`
+      );
     }
   }
 
@@ -789,8 +901,10 @@ class OverridesService {
       createdBy: override.createdBy,
       createdAt: override.createdAt,
       updatedAt: override.updatedAt,
-      isExpired: override.expiresAt ? new Date(override.expiresAt) < new Date() : false,
-      isPermanent: override.expiresAt === null
+      isExpired: override.expiresAt
+        ? new Date(override.expiresAt) < new Date()
+        : false,
+      isPermanent: override.expiresAt === null,
     };
   }
 }
