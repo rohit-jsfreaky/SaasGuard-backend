@@ -43,7 +43,7 @@ app.use((req, res, next) => {
 });
 
 // Mount routes
-app.use('/', routes);
+app.use('/api', routes);
 
 // 404 handler
 app.use((req, res, next) => {
